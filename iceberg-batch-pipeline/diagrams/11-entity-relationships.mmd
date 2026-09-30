@@ -1,0 +1,49 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+erDiagram
+  direction LR
+  REGION ||--o{ NATION : contains
+  NATION ||--o{ CUSTOMER : locates
+  NATION ||--o{ SUPPLIER : locates
+  CUSTOMER ||--o{ ORDERS : places
+  ORDERS ||--|{ LINEITEM : contains
+  PART ||--o{ PARTSUPP : offered_as
+  SUPPLIER ||--o{ PARTSUPP : supplies
+  PARTSUPP ||--o{ LINEITEM : sources
+  REGION {
+    bigint r_regionkey PK
+  }
+  NATION {
+    bigint n_nationkey PK
+    bigint n_regionkey FK
+  }
+  CUSTOMER {
+    bigint c_custkey PK
+    bigint c_nationkey FK
+  }
+  SUPPLIER {
+    bigint s_suppkey PK
+    bigint s_nationkey FK
+  }
+  ORDERS {
+    bigint o_orderkey PK
+    bigint o_custkey FK
+  }
+  PART {
+    bigint p_partkey PK
+  }
+  PARTSUPP {
+    bigint ps_partkey PK, FK
+    bigint ps_suppkey PK, FK
+  }
+  LINEITEM {
+    bigint l_orderkey PK, FK
+    int l_linenumber PK
+    bigint l_partkey FK
+    bigint l_suppkey FK
+  }
+  classDef geography fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef sales fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef supply fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  class REGION,NATION geography
+  class CUSTOMER,ORDERS,LINEITEM sales
+  class PART,SUPPLIER,PARTSUPP supply

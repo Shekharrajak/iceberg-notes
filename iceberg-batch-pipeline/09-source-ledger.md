@@ -189,6 +189,22 @@ The branch-specific `PipelinedShuffleDependency` paths in this Spark checkout ar
 
 These are source/test inspections, not newly executed test results. Render and link validation for this documentation is recorded separately in [VALIDATION.md](VALIDATION.md).
 
+## Arrow and hardware addendum
+
+Chapters [13](13-arrow-memory-and-kernels.md), [14](14-vectorization-and-hardware.md) and [15](15-arrow-in-iceberg-scan-and-rewrite.md) extend the source inspection into Arrow buffers/kernels, hardware cost models, and scan/rewrite integration. Their primary-source links and inspected tests are recorded next to the claims.
+
+| Source | Revision and interpretation |
+| --- | --- |
+| Arrow reference checkout | `149b3ab23dc360e9452b2f854b01d2f5fed06f43`, clean; workspace 60.0.0 |
+| Comet dependency boundary | `184accac5b9cee6b761a6673c73c263adedef45e`; Arrow/Parquet manifest requirements 59.2.0, resolved lockfile versions 59.3.0; existing user changes preserved |
+| Iceberg Rust used by Comet | Manifest-pinned `bb1e4a4861f02377489eff818b75138f414c4cb0`; inspected the corresponding Cargo git checkout, not the separate datafusion-iceberg connector |
+| DataFusion reference checkout | `cd05b417544262f8a6c114e304055da53e5b4162`, clean; not a claim about historical binary linkage |
+| Iceberg Java reference checkout | `5e7169168db3d34e29354c6f59ec4d6e420b8d2d`; pre-existing untracked research notes preserved |
+
+The cached 59.3.0 aggregation/filter implementations were also checked. The BMI2 bitmap `compress`/`expand` helpers in Arrow 60.0.0 were absent from that cached 59.3.0 buffer source; they must not be credited to the checked Comet dependency. Local Cargo source links require those caches to remain available. Release numbers alone do not prove which binary ran the saved benchmark.
+
+Hardware explanations use official LLVM, Rust, Intel, Arm, Linux and Berkeley Lab references. They are explanatory cost models, not measurements of this machine. No assembly, hardware counters, Arrow tests or rewrite benchmarks were collected/run for this addendum.
+
 ## Revalidation procedure
 
 1. Record every relevant checkout HEAD and dirty status again.
@@ -199,4 +215,4 @@ These are source/test inspections, not newly executed test results. Render and l
 6. Confirm I/O behavior before claiming pruning, and exact failure outcomes before claiming recovery.
 7. Regenerate diagrams after editing Mermaid and inspect the changed outputs.
 
-No benchmark speedups or current GitHub issue/PR states are asserted in this collection.
+Historical TPC-H timings are separately qualified in chapter 12. No new SIMD, hardware or rewrite speedup, or live GitHub issue/PR state, is asserted by this addendum.

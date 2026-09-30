@@ -435,6 +435,171 @@
         "Ubuntu, Arial, sans-serif"
       ],
       "fontLoaded": true
+    },
+    {
+      "id": "11-entity-relationships",
+      "title": "Entity relationships",
+      "chapter": "11-tpch-dataset-and-schema.md",
+      "type": "ER",
+      "source": "11-entity-relationships.mmd",
+      "svg": "11-entity-relationships.svg",
+      "width": 1775,
+      "height": 591,
+      "textElements": 80,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "11-from-generated-data-to-iceberg",
+      "title": "From generated data to Iceberg",
+      "chapter": "11-tpch-dataset-and-schema.md",
+      "type": "flowchart",
+      "source": "11-from-generated-data-to-iceberg.mmd",
+      "svg": "11-from-generated-data-to-iceberg.svg",
+      "width": 2141,
+      "height": 296,
+      "textElements": 22,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "12-paired-q6-execution-flow",
+      "title": "Paired Q6 execution flow",
+      "chapter": "12-tpch-spark-versus-comet.md",
+      "type": "flowchart",
+      "source": "12-paired-q6-execution-flow.mmd",
+      "svg": "12-paired-q6-execution-flow.svg",
+      "width": 1971,
+      "height": 255,
+      "textElements": 28,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "12-what-the-harness-actually-times",
+      "title": "What the harness actually times",
+      "chapter": "12-tpch-spark-versus-comet.md",
+      "type": "flowchart",
+      "source": "12-what-the-harness-actually-times.mmd",
+      "svg": "12-what-the-harness-actually-times.svg",
+      "width": 2690,
+      "height": 268,
+      "textElements": 23,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "13-batch-and-buffer-ownership",
+      "title": "Batch and buffer ownership",
+      "chapter": "13-arrow-memory-and-kernels.md",
+      "type": "flowchart",
+      "source": "13-batch-and-buffer-ownership.mmd",
+      "svg": "13-batch-and-buffer-ownership.svg",
+      "width": 1016,
+      "height": 537,
+      "textElements": 25,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "13-c-interface-and-comet-handoff",
+      "title": "C interface and Comet handoff",
+      "chapter": "13-arrow-memory-and-kernels.md",
+      "type": "sequence",
+      "source": "13-c-interface-and-comet-handoff.mmd",
+      "svg": "13-c-interface-and-comet-handoff.svg",
+      "width": 1037,
+      "height": 639,
+      "textElements": 18,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "14-from-a-predicate-to-selected-rows",
+      "title": "From a predicate to selected rows",
+      "chapter": "14-vectorization-and-hardware.md",
+      "type": "flowchart",
+      "source": "14-from-a-predicate-to-selected-rows.mmd",
+      "svg": "14-from-a-predicate-to-selected-rows.svg",
+      "width": 1676,
+      "height": 316,
+      "textElements": 22,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "14-the-memory-hierarchy",
+      "title": "The memory hierarchy",
+      "chapter": "14-vectorization-and-hardware.md",
+      "type": "flowchart",
+      "source": "14-the-memory-hierarchy.mmd",
+      "svg": "14-the-memory-hierarchy.svg",
+      "width": 1690,
+      "height": 292,
+      "textElements": 19,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "15-scan-work-reduction-ladder",
+      "title": "Scan work reduction ladder",
+      "chapter": "15-arrow-in-iceberg-scan-and-rewrite.md",
+      "type": "flowchart",
+      "source": "15-scan-work-reduction-ladder.mmd",
+      "svg": "15-scan-work-reduction-ladder.svg",
+      "width": 2281,
+      "height": 233,
+      "textElements": 22,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "15-rewrite-coordination-sequence",
+      "title": "Rewrite coordination sequence",
+      "chapter": "15-arrow-in-iceberg-scan-and-rewrite.md",
+      "type": "sequence",
+      "source": "15-rewrite-coordination-sequence.mmd",
+      "svg": "15-rewrite-coordination-sequence.svg",
+      "width": 1639,
+      "height": 823,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "15-native-write-data-path",
+      "title": "Native write data path",
+      "chapter": "15-arrow-in-iceberg-scan-and-rewrite.md",
+      "type": "flowchart",
+      "source": "15-native-write-data-path.mmd",
+      "svg": "15-native-write-data-path.svg",
+      "width": 2337,
+      "height": 237,
+      "textElements": 20,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
     }
   ]
 }

@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#475569"}}}%%
+sequenceDiagram
+  box rgb(254, 249, 195) Iceberg Java driver
+    participant A as Rewrite action
+    participant C as Rewrite commit manager
+  end
+  box rgb(224, 242, 254) Spark
+    participant S as Planner and scheduler
+  end
+  box rgb(237, 233, 254) Executor work
+    participant E as Eligible native or JVM pipeline
+  end
+  box rgb(241, 245, 249) Storage
+    participant O as Data and metadata files
+  end
+  A->>A: Plan file groups from starting snapshot
+  A->>S: Submit read and replacement-write work
+  S->>E: Schedule group tasks
+  E->>O: Read valid rows and applicable deletes
+  O-->>E: Return requested bytes
+  E->>E: Decode, optionally reorder, encode replacements
+  E->>O: Finish new Parquet files
+  E-->>S: Return compatible file results
+  S-->>A: Return rewritten group outputs
+  A->>C: Commit completed replacement groups
+  C->>O: Validate and publish replacement metadata
+  Note over A,O: Partial-progress mode can commit groups incrementally

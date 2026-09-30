@@ -47,7 +47,7 @@ try {
         await Promise.all(images.map(image => image.decode()));
         return {
           headings: document.querySelectorAll('article h1,article h2,article h3,article h4,article h5,article h6').length,
-          diagrams: images.length,
+          diagrams: document.querySelectorAll('.diagram img').length,
           brokenImages: images.filter(image => !image.naturalWidth).length,
           font: document.fonts.check('400 16px Ubuntu') && document.fonts.check('500 16px Ubuntu'),
           overflow: document.documentElement.scrollWidth > innerWidth + 1,
@@ -89,7 +89,7 @@ try {
           for (const button of document.querySelectorAll('.diagram-zoom')) button.click();
         });
       }
-      if (['index.html', '02-iceberg-scan.html', '08-capabilities-and-debugging.html'].includes(item.html)) {
+      if (['index.html', '02-iceberg-scan.html', '08-capabilities-and-debugging.html', '11-tpch-dataset-and-schema.html', '12-tpch-spark-versus-comet.html', '13-arrow-memory-and-kernels.html', '14-vectorization-and-hardware.html', '15-arrow-in-iceberg-scan-and-rewrite.html'].includes(item.html)) {
         await page.screenshot({ path: path.join(screenshots, `${path.basename(item.html, '.html')}-${size}.png`) });
       }
       if (item.html === '02-iceberg-scan.html') {
@@ -97,6 +97,17 @@ try {
         await page.screenshot({ path: path.join(screenshots, `scan-inline-${size}.png`) });
         await page.evaluate(() => document.getElementById('runtime-pruning-sequence').scrollIntoView({ behavior: 'instant' }));
         await page.screenshot({ path: path.join(screenshots, `scan-sequence-${size}.png`) });
+      }
+      const evidenceSections = {
+        '11-tpch-dataset-and-schema.html': ['entity-relationships'],
+        '12-tpch-spark-versus-comet.html': ['all-22-historic-timings', 'paired-q6-execution-flow', 'merge-on-read-evidence'],
+        '13-arrow-memory-and-kernels.html': ['batch-and-buffer-ownership', 'c-interface-and-comet-handoff'],
+        '14-vectorization-and-hardware.html': ['from-a-predicate-to-selected-rows', 'the-memory-hierarchy'],
+        '15-arrow-in-iceberg-scan-and-rewrite.html': ['scan-work-reduction-ladder', 'rewrite-coordination-sequence', 'native-write-data-path']
+      };
+      for (const id of evidenceSections[item.html] ?? []) {
+        await page.evaluate(id => document.getElementById(id).scrollIntoView({ behavior: 'instant' }), id);
+        await page.screenshot({ path: path.join(screenshots, `${id}-${size}.png`) });
       }
       diagrams += item.diagrams;
     }

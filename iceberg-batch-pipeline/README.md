@@ -1,6 +1,6 @@
 # Iceberg batch pipeline source notebook
 
-These notes explain how Spark, Iceberg, Comet, DataFusion, and Arrow cooperate to run a distributed batch pipeline. They are a presenter reference and a source-navigation guide, not a compatibility promise or a benchmark report.
+These notes explain how Spark, Iceberg, Comet, DataFusion, and Arrow cooperate to run a distributed batch pipeline. They are a presenter reference and a source-navigation guide, with a separately qualified analysis of the saved TPC-H benchmark evidence. They are not a compatibility promise or an audited TPC-H result.
 
 The central model is simple: Spark owns distributed query execution; Iceberg owns table-state semantics; Comet accelerates eligible executor work. Reading, filtering, delete application, schema adaptation, and writing still carry correctness obligations inside the native region.
 
@@ -21,13 +21,18 @@ For browser reading, open the [formatted notebook](index.html). It combines the 
 | [Fault tolerance](07-fault-tolerance.md) | Task retry, shuffle recomputation, cancellation, commit conflict, unknown outcome, and cleanup |
 | [Capabilities and investigation guide](08-capabilities-and-debugging.md) | Native versus delegated versus missing; what to measure and where to investigate |
 | [DataFusion operators and the standalone connector](10-datafusion-and-connector.md) | How local batch streams execute; how datafusion-iceberg differs from Comet |
+| [TPC-H dataset and schema](11-tpch-dataset-and-schema.md) | All eight tables and 61 columns, relationships, scale factors, data generation, Iceberg layout, and the 22-query workload |
+| [TPC-H Spark versus Comet](12-tpch-spark-versus-comet.md) | Historic timings, paired Q6 plans, where time was saved, MOR evidence, harness behavior, and limits on attribution |
+| [Arrow memory and kernels](13-arrow-memory-and-kernels.md) | Buffer ownership, nulls, strings/views, nested arrays, copies, alignment, FFI, and memory accounting |
+| [Vectorization and hardware](14-vectorization-and-hardware.md) | Batches versus SIMD, actual Rust kernels, compiler targets, caches, bandwidth, TLBs, NUMA, and measurement |
+| [Arrow in scans and rewrites](15-arrow-in-iceberg-scan-and-rewrite.md) | Decode, late materialization, delete correctness, I/O concurrency, writer buffering, compaction, and future read layout |
 | [Source ledger](09-source-ledger.md) | Exact checkouts, source links, tests, limitations, and revalidation procedure |
 
 The existing [earlier mental-model notebook](../distributed-batch-pipeline-mental-model.md) is preserved. Prefer this collection for the qualified implementation details below.
 
 ## Diagram artifacts
 
-The technical chapters contain editable Mermaid flowcharts and sequence diagrams. [The offline diagram gallery](diagrams/index.html) shows the rendered SVGs and links to the corresponding `.mmd` sources. The renderer extracts its inputs from the Markdown; edit the notes first, then regenerate. See [rendering instructions](scripts/README.md).
+The technical chapters contain editable Mermaid flowcharts, sequence diagrams and an entity-relationship diagram. [The offline diagram gallery](diagrams/index.html) shows the rendered SVGs and links to the corresponding `.mmd` sources. The renderer extracts its inputs from the Markdown; edit the notes first, then regenerate. See [rendering instructions](scripts/README.md).
 
 Blue denotes Spark control/runtime, yellow Iceberg metadata, purple Comet/DataFusion native execution, orange file/codec work, green executor work, and slate durable storage or external services. Diagrams are conceptual traces of the cited paths, not exhaustive call graphs. Async scheduling, I/O overlap, and version shims are compressed where they do not change the ownership being explained.
 
@@ -44,6 +49,9 @@ Blue denotes Spark control/runtime, yellow Iceberg metadata, purple Comet/DataFu
 | Delete-file rewriting reads/writes data artifacts | `rewrite_position_delete_files` is not purely metadata housekeeping; it is not thereby natively accelerated |
 | Native reads and native writes have separate eligibility gates | v3 delete-vector reads do not imply v3 native writes |
 | Fallback is normally a planning decision | Runtime native errors generally fail a task; arbitrary mid-query JVM fallback is not promised |
+| Arrow layout, batch execution and SIMD are distinct | Check concrete kernels, types, compiler targets and profiles before attributing performance |
+| The Arrow reference tree is 60.0.0; Comet resolves 59.3.0 | Newer reference-source optimizations are not automatically in the current Comet binary or old benchmark |
+| A faster rewrite and faster post-rewrite reads are separate outcomes | Measure rewrite CPU/I/O/commit cost separately from file layout and future pruning |
 
 ## Evidence discipline
 

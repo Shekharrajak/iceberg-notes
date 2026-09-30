@@ -1,0 +1,29 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph NATIVE["Eligible Comet native writer"]
+    B["Input RecordBatch"]
+    S["Align target schema and field IDs"]
+    P["Partition routing and row pacing"]
+    W["DataFile and rolling writer"]
+    B --> S --> P --> W
+  end
+  subgraph PARQUET["Parquet Rust"]
+    A["Arrow writer: levels and encoded columns"]
+    G["Pages and buffered row groups"]
+    F["Flush data and finish footer"]
+    W --> A --> G --> F
+  end
+  subgraph STORAGE["Output and publication boundary"]
+    O[("New data files")]
+    J["JVM metadata reconciliation and commit contract"]
+    F --> O
+    F --> J
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef parquet fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  classDef java fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class B,S,P,W native
+  class A,G,F parquet
+  class O store
+  class J java

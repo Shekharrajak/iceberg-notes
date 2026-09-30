@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TPC-H Spark versus Comet benchmark findings | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html" aria-current="page"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="12-tpch-spark-versus-comet.md">Markdown source</a></header><article><h1 id="tpc-h-spark-versus-comet-benchmark-findings">TPC-H Spark versus Comet benchmark findings</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#findings-and-confidence">Findings and confidence</a></li>
+<li><a href="#evidence-recovered">Evidence recovered</a></li>
+<li><a href="#historical-conditions-versus-current-defaults">Historical conditions versus current defaults</a></li>
+<li><a href="#all-22-historic-timings">All 22 historic timings</a></li>
+<li><a href="#where-the-saved-time-is-concentrated">Where the saved time is concentrated</a></li>
+<li><a href="#q6-question-and-plan-proof">Q6 question and plan proof</a></li>
+<li><a href="#what-likely-helped-other-query-families">What likely helped other query families</a></li>
+<li><a href="#merge-on-read-evidence">Merge-on-read evidence</a></li>
+<li><a href="#what-the-harness-actually-times">What the harness actually times</a></li>
+<li><a href="#what-we-can-and-cannot-attribute">What we can and cannot attribute</a></li>
+<li><a href="#reproduction-and-evidence-checklist">Reproduction and evidence checklist</a></li>
+<li><a href="#summary-to-use-in-a-talk">Summary to use in a talk</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="11-tpch-dataset-and-schema.html">Dataset and schema</a></p>
+<p>The historic local SF1 comparison reports roughly <strong>half the total query time</strong> with Comet, with gains varying substantially by query. The preserved Q6 plans show a concrete architectural change: Spark&#39;s scan batches become rows before the residual filter and aggregation; Comet keeps the scan, filter, projection, aggregation and shuffle native, converting only the final result back to rows.</p>
+<p>That explains a credible mechanism, not a measured breakdown of the saved seconds. We recovered the presentation timing table, two charts and a Q6 plan pair. We did <strong>not</strong> recover the original full-suite result JSONs, full plan directory, historical event logs or exact historical build configuration. No benchmark was rerun while writing these notes.</p>
+<h2 id="findings-and-confidence">Findings and confidence</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Finding</th>
+<th>Evidence</th>
+<th>Confidence boundary</th>
+</tr>
+</thead><tbody><tr>
+<td>Historic base run improved by about 2x overall</td>
+<td>Preserved 22-query timing table and chart</td>
+<td>One measured iteration; not a repeated performance estimate</td>
+</tr>
+<tr>
+<td>Largest absolute savings were Q18, Q1 and Q9</td>
+<td>Arithmetic from the rounded timing table</td>
+<td>About 4.42 seconds combined; not attribution to particular operators</td>
+</tr>
+<tr>
+<td>Q6 forms a long native pipeline</td>
+<td>Saved formatted Spark and Comet plans</td>
+<td>Direct plan evidence, but not tied by a run manifest to the historic timed invocation</td>
+</tr>
+<tr>
+<td>Q6 does not need a join</td>
+<td>Checked query and saved plans</td>
+<td>Its improvement is not a native join improvement</td>
+</tr>
+<tr>
+<td>MOR chart shows lower Comet bars across the displayed queries</td>
+<td>Saved SF1, 5%-delete, three-run-median chart</td>
+<td>Raw samples and correctness hashes not recovered; no exact new ratios derived from pixels</td>
+</tr>
+<tr>
+<td>Full-query time is more than scan time</td>
+<td>Current harness timer placement</td>
+<td>Does not establish which exact harness revision produced the historic chart</td>
+</tr>
+<tr>
+<td>Hash equality is reported in the deck</td>
+<td>Speaker notes say all 22 queries matched</td>
+<td>Not independently revalidated here without original outputs</td>
+</tr>
+</tbody></table></div>
+<p>This is a <strong>TPC-H-derived development comparison</strong>, not a published TPC-H QphH result. A 2x time ratio is neither a QphH score nor a guarantee for other scales, machines, schemas or storage. <a href="https://www.tpc.org/tpch/">TPC-H benchmark overview</a>.</p>
+<h2 id="evidence-recovered">Evidence recovered</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Artifact</th>
+<th>What it establishes</th>
+<th>What it does not establish</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="assets/tpch/historic-sf1-transcription.json">Historic timing transcription</a></td>
+<td>The 22 rounded values displayed in the preserved presentation</td>
+<td>Original duration samples, correctness results or an audited benchmark</td>
+</tr>
+<tr>
+<td><a href="assets/tpch/tpch-sf1-jvm-vs-native.png">Base SF1 chart</a></td>
+<td>Visual comparison from the earlier local run</td>
+<td>Per-operator timings or uncertainty intervals</td>
+</tr>
+<tr>
+<td><a href="assets/tpch/tpch-sf1-mor-jvm-vs-native.png">MOR chart</a></td>
+<td>A separately labelled three-run-median comparison with 5% deletes</td>
+<td>Exact snapshot IDs, delete counts, raw medians or variance</td>
+</tr>
+<tr>
+<td><a href="assets/tpch/tpch-q6-spark-iceberg.plan.txt">Spark Q6 plan</a></td>
+<td>JVM baseline operators and scan/filter contract</td>
+<td>Actual CPU time, bytes read, spill, cache state or benchmark provenance</td>
+</tr>
+<tr>
+<td><a href="assets/tpch/tpch-q6-comet-iceberg.plan.txt">Comet Q6 plan</a></td>
+<td>Native scan, filter, projection, aggregate and native shuffle</td>
+<td>The percentage of gain contributed by each operator</td>
+</tr>
+</tbody></table></div>
+<p>The JSON is deliberately named <strong>transcription</strong>: it was created from the talk&#39;s rounded table, not recovered from a benchmark process. The plans and chart images are copied unchanged from the existing talk assets so the notebook remains self-contained.</p>
+<h2 id="historical-conditions-versus-current-defaults">Historical conditions versus current defaults</h2>
+<p>The <a href="file:///Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html" title="/Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html, line 998; opens the local source file" class="source-link">preserved presentation</a> reports macOS Apple Silicon, Spark 3.5.8, local mode, SF1, 22 queries and one measured base-table iteration. It also reports matching result hashes and native scan plans for all queries. Exact machine model, cores used, cache policy, raw hashes, Comet SHA/JAR checksum and full Spark configuration were not recovered.</p>
+<p>Do not fill those gaps with the current demo defaults. The current demo README recommends Spark 3.5.3, Scala 2.12, Java 17 and Iceberg runtime 1.8.1; that is a different recorded setup, not proof of the historical stack.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Setting</th>
+<th>Checked current source</th>
+<th>Why it matters</th>
+</tr>
+</thead><tbody><tr>
+<td>Workload source</td>
+<td><code>tpcbench.py --catalog ... --database ...</code> registers Iceberg tables as temporary views</td>
+<td>Both engines must refer to the same logical data and snapshots</td>
+</tr>
+<tr>
+<td>Baseline engine</td>
+<td><code>spark-iceberg.toml</code>, without Comet plugin settings</td>
+<td>The baseline is Spark with Iceberg, not a generic raw-Parquet scan</td>
+</tr>
+<tr>
+<td>Native engine</td>
+<td>Plugin, <code>spark.comet.enabled</code>, <code>spark.comet.exec.enabled</code>, <code>spark.comet.scan.icebergNative.enabled</code></td>
+<td>This changes compute as well as the scan; the result is not a scan-only ablation</td>
+</tr>
+<tr>
+<td>Shuffle</td>
+<td><code>CometShuffleManager</code> in the Comet engine file</td>
+<td>An eligible exchange can move into native shuffle</td>
+</tr>
+<tr>
+<td>Reader concurrency</td>
+<td>Local Comet engine file requests 4</td>
+<td>A current uncommitted setting; not confirmed for the historic run</td>
+</tr>
+<tr>
+<td>Cast compatibility</td>
+<td>Current Comet engine sets <code>spark.comet.expression.Cast.allowIncompatible=true</code></td>
+<td>This permission broadens eligibility; preserve correctness checks and report it</td>
+</tr>
+<tr>
+<td>Common memory</td>
+<td>Current <code>run.py</code>: driver 8G, executor 16g, off-heap enabled with 16g</td>
+<td>Defaults are not historical measurements; local mode does not create two remote executors merely because a profile names two</td>
+</tr>
+<tr>
+<td>AQE</td>
+<td>Not explicitly pinned in current engine TOMLs or common configuration</td>
+<td>Record the effective configuration and final adaptive plan; do not infer it from an old runbook</td>
+</tr>
+<tr>
+<td>Iterations and order</td>
+<td>Current harness runs query numbers in ascending order per iteration</td>
+<td>No automatic discarded warm-up phase or randomized engine order</td>
+</tr>
+<tr>
+<td>Spark restart</td>
+<td><code>run.py</code> restarts standalone master/worker unless <code>--no-restart</code> is supplied</td>
+<td>Use <code>--no-restart</code> for the local-mode workflow; this is not a documented OS cache flush</td>
+</tr>
+</tbody></table></div>
+<p>Source check for this chapter: Comet <code>184accac5b9cee6b761a6673c73c263adedef45e</code>, with local converter and Comet engine changes; talk <code>5503f3c9be4f0617c26fe88df8680a2057487d68</code>. These identify inspected source, not the historical timed binaries. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/run.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/run.py, line 107; opens the local source file" class="source-link">run.py</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/engines/spark-iceberg.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/engines/spark-iceberg.toml, line 20; opens the local source file" class="source-link">Spark engine</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/engines/comet-iceberg.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/engines/comet-iceberg.toml, line 34; opens the local source file" class="source-link">Comet engine</a>.</p>
+<h2 id="all-22-historic-timings">All 22 historic timings</h2>
+<p>Seconds below are transcribed from the existing deck. Ratios and savings are recalculated from those displayed two-decimal values, so they can differ from the deck&#39;s one-decimal ratios. Lower time is better. A ratio above 1 means Comet was faster in that sample.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Query</th>
+<th align="right">Spark seconds</th>
+<th align="right">Comet seconds</th>
+<th align="right">Spark / Comet</th>
+<th align="right">Seconds saved</th>
+</tr>
+</thead><tbody><tr>
+<td>Q1</td>
+<td align="right">4.65</td>
+<td align="right">3.17</td>
+<td align="right">1.47x</td>
+<td align="right">1.48</td>
+</tr>
+<tr>
+<td>Q2</td>
+<td align="right">0.85</td>
+<td align="right">0.69</td>
+<td align="right">1.23x</td>
+<td align="right">0.16</td>
+</tr>
+<tr>
+<td>Q3</td>
+<td align="right">1.23</td>
+<td align="right">0.45</td>
+<td align="right">2.73x</td>
+<td align="right">0.78</td>
+</tr>
+<tr>
+<td>Q4</td>
+<td align="right">1.20</td>
+<td align="right">0.58</td>
+<td align="right">2.07x</td>
+<td align="right">0.62</td>
+</tr>
+<tr>
+<td>Q5</td>
+<td align="right">1.50</td>
+<td align="right">0.55</td>
+<td align="right">2.73x</td>
+<td align="right">0.95</td>
+</tr>
+<tr>
+<td>Q6</td>
+<td align="right">0.31</td>
+<td align="right">0.09</td>
+<td align="right">3.44x</td>
+<td align="right">0.22</td>
+</tr>
+<tr>
+<td>Q7</td>
+<td align="right">1.53</td>
+<td align="right">0.78</td>
+<td align="right">1.96x</td>
+<td align="right">0.75</td>
+</tr>
+<tr>
+<td>Q8</td>
+<td align="right">1.05</td>
+<td align="right">0.49</td>
+<td align="right">2.14x</td>
+<td align="right">0.56</td>
+</tr>
+<tr>
+<td>Q9</td>
+<td align="right">2.58</td>
+<td align="right">1.13</td>
+<td align="right">2.28x</td>
+<td align="right">1.45</td>
+</tr>
+<tr>
+<td>Q10</td>
+<td align="right">1.52</td>
+<td align="right">0.82</td>
+<td align="right">1.85x</td>
+<td align="right">0.70</td>
+</tr>
+<tr>
+<td>Q11</td>
+<td align="right">0.56</td>
+<td align="right">0.27</td>
+<td align="right">2.07x</td>
+<td align="right">0.29</td>
+</tr>
+<tr>
+<td>Q12</td>
+<td align="right">0.81</td>
+<td align="right">0.36</td>
+<td align="right">2.25x</td>
+<td align="right">0.45</td>
+</tr>
+<tr>
+<td>Q13</td>
+<td align="right">0.99</td>
+<td align="right">0.30</td>
+<td align="right">3.30x</td>
+<td align="right">0.69</td>
+</tr>
+<tr>
+<td>Q14</td>
+<td align="right">0.34</td>
+<td align="right">0.23</td>
+<td align="right">1.48x</td>
+<td align="right">0.11</td>
+</tr>
+<tr>
+<td>Q15</td>
+<td align="right">1.46</td>
+<td align="right">0.40</td>
+<td align="right">3.65x</td>
+<td align="right">1.06</td>
+</tr>
+<tr>
+<td>Q16</td>
+<td align="right">0.72</td>
+<td align="right">0.68</td>
+<td align="right">1.06x</td>
+<td align="right">0.04</td>
+</tr>
+<tr>
+<td>Q17</td>
+<td align="right">1.46</td>
+<td align="right">0.41</td>
+<td align="right">3.56x</td>
+<td align="right">1.05</td>
+</tr>
+<tr>
+<td>Q18</td>
+<td align="right">2.35</td>
+<td align="right">0.86</td>
+<td align="right">2.73x</td>
+<td align="right">1.49</td>
+</tr>
+<tr>
+<td>Q19</td>
+<td align="right">0.41</td>
+<td align="right">0.17</td>
+<td align="right">2.41x</td>
+<td align="right">0.24</td>
+</tr>
+<tr>
+<td>Q20</td>
+<td align="right">0.83</td>
+<td align="right">0.45</td>
+<td align="right">1.84x</td>
+<td align="right">0.38</td>
+</tr>
+<tr>
+<td>Q21</td>
+<td align="right">2.41</td>
+<td align="right">1.51</td>
+<td align="right">1.60x</td>
+<td align="right">0.90</td>
+</tr>
+<tr>
+<td>Q22</td>
+<td align="right">0.57</td>
+<td align="right">0.20</td>
+<td align="right">2.85x</td>
+<td align="right">0.37</td>
+</tr>
+</tbody></table></div>
+<p><img class="evidence-image" src="assets/tpch/tpch-sf1-jvm-vs-native.png" alt="Preserved historic local SF1 chart comparing Spark Iceberg with Comet Iceberg"></p>
+<p>The original deck reports totals of <strong>29.33 s Spark and 14.56 s Comet</strong>, with a <strong>2.19x geometric mean</strong>. Adding its displayed query rows gives <strong>29.33 s and 14.59 s</strong>. From those rounded rows, the ratio of sums is <strong>2.0103x</strong>, total savings are <strong>14.74 s</strong>, and the geometric mean is <strong>2.1857x</strong>. The 0.03 s total difference may be rounding or transcription; without raw samples we cannot settle it. Preserve the distinction instead of manufacturing extra precision.</p>
+<pre><code>query ratio = Spark query time / Comet query time
+query time reduction = 1 - Comet query time / Spark query time
+suite ratio = sum of Spark query times / sum of Comet query times
+geometric mean = exp(mean(log(each query ratio)))</code></pre>
+<p>The rounded-row suite reduction is about <strong>50.26%</strong>. A 2x ratio means about half the elapsed time, not a 200% reduction. The geometric mean weights each query&#39;s multiplicative ratio equally; the ratio of sums gives more influence to expensive queries. Neither should be substituted for the other.</p>
+<h2 id="where-the-saved-time-is-concentrated">Where the saved time is concentrated</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Query or group</th>
+<th align="right">Savings from rounded rows</th>
+<th>What this tells us</th>
+</tr>
+</thead><tbody><tr>
+<td>Q18</td>
+<td align="right">1.49 s</td>
+<td>Largest displayed absolute saving; aggregate/subquery/join workload</td>
+</tr>
+<tr>
+<td>Q1</td>
+<td align="right">1.48 s</td>
+<td>Only about 1.47x faster, yet almost as much time saved as Q18 because it was expensive</td>
+</tr>
+<tr>
+<td>Q9</td>
+<td align="right">1.45 s</td>
+<td>Multi-table profit query with composite-key joins and arithmetic</td>
+</tr>
+<tr>
+<td>Q15 and Q17</td>
+<td align="right">2.11 s combined</td>
+<td>Large relative gains and material absolute contributions</td>
+</tr>
+<tr>
+<td>Top five above</td>
+<td align="right">6.53 s</td>
+<td>About 44.3% of the 14.74 s rounded-row savings</td>
+</tr>
+<tr>
+<td>Q6</td>
+<td align="right">0.22 s</td>
+<td>An excellent plan explanation, but only about 1.5% of suite savings</td>
+</tr>
+<tr>
+<td>Q16</td>
+<td align="right">0.04 s</td>
+<td>Smallest displayed gain; one sample cannot establish a robust improvement</td>
+</tr>
+</tbody></table></div>
+<p>This separates the most teachable native plan from the biggest contributors to total time saved. Q6 is easy to explain, but it did not account for most of the historic suite improvement.</p>
+<h2 id="q6-question-and-plan-proof">Q6 question and plan proof</h2>
+<p>The checked Q6 filters <code>lineitem</code> to shipment dates in 1994, discounts from 0.03 through 0.05 inclusive, and quantity below 24. It sums <code>l_extendedprice * l_discount</code>. There is no join, no GROUP BY key and one final aggregate row. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/queries/tpch/q6.sql" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/queries/tpch/q6.sql, line 1; opens the local source file" class="source-link">Current Q6 SQL</a>.</p>
+<p>Both preserved plans project the same four scan columns: extended price, discount, shipment date and quantity. Both show the same pushed filter conditions. The native plan also retains <code>CometFilter</code>; pushing a condition into a scan does not universally remove the need for exact residual evaluation.</p>
+<h3 id="paired-q6-execution-flow">Paired Q6 execution flow</h3>
+<p>Arrows follow the movement of data upward through the saved physical plans. Spark remains the scheduler in both lanes. The shared starting box means equivalent query/table work, not a claim that these saved files prove identical historical snapshot IDs.</p>
+<figure class="diagram" id="diagram-12-paired-q6-execution-flow"><figcaption><span>Paired Q6 execution flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-12-paired-q6-execution-flow" hidden>Actual size</button><a href="diagrams/12-paired-q6-execution-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/12-paired-q6-execution-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-12-paired-q6-execution-flow" tabindex="0" role="region" aria-label="Paired Q6 execution flow"><img src="diagrams/12-paired-q6-execution-flow.svg" width="1971" height="255" alt="Paired Q6 execution flow"></div></figure>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Stage</th>
+<th>Spark plan</th>
+<th>Comet plan</th>
+<th>What changed</th>
+</tr>
+</thead><tbody><tr>
+<td>File reading</td>
+<td>Iceberg <code>BatchScan</code></td>
+<td><code>CometIcebergNativeScan</code></td>
+<td>Eligible file decode and Arrow batch production move into the native reader</td>
+</tr>
+<tr>
+<td>First row boundary</td>
+<td><code>ColumnarToRow</code> immediately above scan</td>
+<td>No row conversion here</td>
+<td>Comet&#39;s residual filter and projection receive batches</td>
+</tr>
+<tr>
+<td>Residual evaluation</td>
+<td>JVM code-generated Filter/Project</td>
+<td><code>CometFilter</code> / <code>CometProject</code></td>
+<td>Supported expressions execute over native columnar input</td>
+</tr>
+<tr>
+<td>Local reduction</td>
+<td>Partial JVM <code>HashAggregate</code></td>
+<td>Partial <code>CometHashAggregate</code></td>
+<td>The aggregate loop and state processing move native</td>
+</tr>
+<tr>
+<td>Exchange</td>
+<td>Spark <code>Exchange</code>, SinglePartition</td>
+<td><code>CometExchange</code>, SinglePartition, <code>CometNativeShuffle</code></td>
+<td>Native exchange implementation, still coordinated by Spark</td>
+</tr>
+<tr>
+<td>Final reduction</td>
+<td>JVM <code>HashAggregate</code></td>
+<td><code>CometHashAggregate</code></td>
+<td>Final combination remains native</td>
+</tr>
+<tr>
+<td>Return to Spark/Python</td>
+<td>Final Spark result rows</td>
+<td><code>CometColumnarToRow</code> after final aggregate</td>
+<td>Row conversion is retained where required, after major reduction</td>
+</tr>
+</tbody></table></div>
+<p>The Spark <code>*</code> markers identify whole-stage code-generated operators. This is not a comparison against naive interpreted Java or an object allocated for every scalar value. The defensible distinction is the location of the row boundary and the implementation of eligible scan/compute/shuffle work.</p>
+<p>Q6&#39;s partial aggregation reduces each input partition to small aggregate state before the SinglePartition exchange. It is therefore misleading to claim that shuffling millions of input rows explains this query&#39;s gain. The native shuffle is visible, but scan/filter/arithmetic/aggregation are more plausible major work sites. <strong>That is an inference; operator timing and byte counters are missing.</strong></p>
+<p>The current Rust <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 217; opens the local source file" class="source-link">Iceberg scan implementation</a> builds an Iceberg Rust Arrow reader with batch size, file concurrency and row selection, then adapts its output to the expected schema. This explains today&#39;s integration. It does not prove the historical build used every current optimization.</p>
+<h2 id="what-likely-helped-other-query-families">What likely helped other query families</h2>
+<p>The SQL shapes below are verified against the checked query files. Their performance explanations are <strong>inferences</strong>, because only Q6&#39;s paired physical plans were recovered. Do not assign a specific native join or fallback node to Q5, Q9, Q16 or Q18 from SQL alone.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Family</th>
+<th>Examples and displayed gains</th>
+<th>Plausible useful native work</th>
+<th>Evidence still needed</th>
+</tr>
+</thead><tbody><tr>
+<td>Scan plus arithmetic/aggregation</td>
+<td>Q1 1.47x; Q6 3.44x</td>
+<td>Decode, filter, decimal expressions, aggregate state updates; fewer row transitions</td>
+<td>Scan/decode CPU, rows before/after filters, byte counters and aggregate time</td>
+</tr>
+<tr>
+<td>Multi-table joins and grouping</td>
+<td>Q3/Q5/Q18 about 2.73x; Q9 2.28x</td>
+<td>Native joins, aggregate reduction, sort and shuffle where eligible</td>
+<td>Actual join strategy/build side, each native island, shuffle bytes and spills</td>
+</tr>
+<tr>
+<td>Aggregate subqueries</td>
+<td>Q15 3.65x; Q17 3.56x</td>
+<td>Native scan/aggregate work in rewritten subplans</td>
+<td>Scan duplication, subquery reuse, decorrelation and final physical plans</td>
+</tr>
+<tr>
+<td>Outer or anti/existence semantics</td>
+<td>Q13 3.30x; Q21 1.60x; Q22 2.85x</td>
+<td>Supported joins, string predicates and grouping</td>
+<td>Null semantics, native coverage and conversion boundaries</td>
+</tr>
+<tr>
+<td>Small displayed improvement</td>
+<td>Q16 1.06x</td>
+<td>Could be dominated by distinct/anti processing, fixed overhead or a less beneficial native region</td>
+<td>Repetitions and the actual plan; the timing alone does not prove fallback</td>
+</tr>
+</tbody></table></div>
+<p>A query can improve even if its ratio is modest because it starts expensive. Conversely, a small subsecond query can show a large ratio while saving little total time. SF1 on local storage also exposes startup, metadata, scheduling and JIT/cache effects that can change at larger scale.</p>
+<h2 id="merge-on-read-evidence">Merge-on-read evidence</h2>
+<p><img class="evidence-image" src="assets/tpch/tpch-sf1-mor-jvm-vs-native.png" alt="Preserved SF1 merge-on-read chart labelled five percent deletes and three-run medians"></p>
+<p>This is a separate experiment, not another iteration of the base-table run. Its title specifies SF1, 5% deletes and three-run medians. The displayed Comet bars are below Spark&#39;s for all 22 queries. We have not digitized the image or promoted estimated bar heights to raw timing values.</p>
+<p>The reader now has additional correctness work: load applicable delete artifacts and suppress deleted records while scanning. Fewer live rows can also change downstream work. Thus a base-versus-MOR chart difference mixes changed data and execution costs; it is not a controlled measurement of delete-application overhead.</p>
+<p>The current converter targets orders and lineitem using an order-key modulo predicate. To establish real delete overhead, preserve the before/after snapshots, counts, delete-file types and sizes, and compare both engines on the same modified snapshot. To separate retained-delete cost from reduced row count, add an equivalent compacted table with the same live rows but no remaining delete artifacts.</p>
+<h2 id="what-the-harness-actually-times">What the harness actually times</h2>
+<p>The following describes the <strong>current checked source</strong>, not a recovered execution trace of the historic run. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py, line 190; opens the local source file" class="source-link">Timer and collection path</a>.</p>
+<figure class="diagram" id="diagram-12-what-the-harness-actually-times"><figcaption><span>What the harness actually times</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-12-what-the-harness-actually-times" hidden>Actual size</button><a href="diagrams/12-what-the-harness-actually-times.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/12-what-the-harness-actually-times.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-12-what-the-harness-actually-times" tabindex="0" role="region" aria-label="What the harness actually times"><img src="diagrams/12-what-the-harness-actually-times.svg" width="2690" height="268" alt="What the harness actually times"></div></figure>
+<p>Important details:</p>
+<ul>
+<li><code>df.explain(&quot;formatted&quot;)</code> is inside the timer even when <code>--plan-dir</code> is absent. Optional plan formatting and file output add more timed work. Omitting plan capture does not make the result an execution-only measurement.</li>
+<li><code>collect()</code> includes bringing output rows to the driver/Python side. Result hashing starts after elapsed time is computed.</li>
+<li>Session startup and table registration happen before the per-query loop. DDL surrounding Q15 is executed but not added as a query duration; the SELECT referencing its view still performs the query&#39;s data work.</li>
+<li>The <code>--write</code> path is a different experiment: the code sorts all output columns, coalesces to one partition and writes Parquet. Do not mix those timings with <code>collect()</code> runs. Its JSON does not include the same row-count/hash fields.</li>
+<li>Plans are captured before the action. With AQE enabled, preserve the final adaptive plan after execution separately; a pre-action explain is not sufficient evidence of the final executed strategy.</li>
+<li>Durations are rounded to milliseconds in the current JSON. Queries always run in numeric order and there is no automatic warm-up exclusion.</li>
+</ul>
+<h3 id="correctness-checks-and-limitations">Correctness checks and limitations</h3>
+<p><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py, line 50; opens the local source file" class="source-link">Hash code</a> sorts collected rows by their string representation and hashes the concatenated strings with MD5. This is useful for exact cross-engine comparison under the same schema and representation, but it is not a tolerance-aware numerical validator, an ordering check, or a substitute for reference answers.</p>
+<p>The harness computes hashes in each iteration but stores only the first iteration&#39;s <code>row_count</code> and <code>result_hash</code> in the per-query JSON entry. Later iterations&#39; printed results must also be checked. In addition, the <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/generate-comparison.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/generate-comparison.py, line 70; opens the local source file" class="source-link">comparison script</a> only <strong>warns</strong> about hash/row-count mismatches and then still generates charts. A rendered chart is not proof that a correctness gate passed.</p>
+<p>The JSON top-level <code>engine</code> field is hardcoded to <code>datafusion-comet</code>, even for the Spark baseline. Identify the run from the filename/name, plugin settings, complete <code>spark_conf</code> and captured plan, not that field alone.</p>
+<p>The summary chart sums per-query medians. That is different from taking the median of whole-suite elapsed times, and it excludes setup or other untimed work. Preserve both metrics when the comparison is intended to describe an entire job.</p>
+<h2 id="what-we-can-and-cannot-attribute">What we can and cannot attribute</h2>
+<p>We can say that the preserved native Q6 plan relocates eligible work and moves row conversion to after aggregation. We can say the historic reported query times are lower for Comet. We cannot say how many milliseconds came from a faster decoder, fewer conversions, SIMD, fewer allocations, shuffle serialization or a particular join algorithm without controlled evidence.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Potential explanation</th>
+<th>How to test it rather than assume it</th>
+</tr>
+</thead><tbody><tr>
+<td>Native file reader is faster</td>
+<td>Same files, projection, filters and output; controlled reader comparison with equal downstream work</td>
+</tr>
+<tr>
+<td>Longer native compute pipeline helps</td>
+<td>Compare JVM scan/compute, a supported mixed path and full native plan; record actual boundaries</td>
+</tr>
+<tr>
+<td>Less data is read</td>
+<td>Compare selected files/row groups and physical bytes; identical SQL alone does not prove identical I/O</td>
+</tr>
+<tr>
+<td>Native shuffle helps</td>
+<td>Hold upstream results and partitioning comparable; measure encode/decode CPU, bytes, compression and fetch time</td>
+</tr>
+<tr>
+<td>Delete application is faster</td>
+<td>Same logical modified snapshot and delete artifacts; compare compacted equivalent as an additional arm</td>
+</tr>
+<tr>
+<td>Spill behavior explains a query</td>
+<td>Record peak memory, reservations, spill bytes and time, not just heap size</td>
+</tr>
+<tr>
+<td>SIMD or allocation reduction explains the gain</td>
+<td>Native/JVM CPU and allocation profiles; no saved profile currently establishes this</td>
+</tr>
+</tbody></table></div>
+<p>A useful decomposition is planning + storage wait + decode/delete work + local compute + exchange + result return. These phases overlap across tasks, so their observed times are not always additive. Any claim that a component accounts for a fixed percentage needs profiling and a controlled comparison.</p>
+<h2 id="reproduction-and-evidence-checklist">Reproduction and evidence checklist</h2>
+<p>Use the existing entry points, with a dedicated warehouse and explicitly pinned versions. These are command templates, not commands executed for this notebook:</p>
+<pre><code>cd /path/to/datafusion-comet/benchmarks/tpc
+python3 run.py --engine spark-iceberg --benchmark tpch --no-restart \
+  --iterations 5 --output /path/to/results \
+  --plan-dir /path/to/plans/spark
+python3 run.py --engine comet-iceberg --benchmark tpch --no-restart \
+  --iterations 5 --output /path/to/results \
+  --plan-dir /path/to/plans/comet</code></pre>
+<p>Set <code>SPARK_HOME</code>, <code>SPARK_MASTER</code>, <code>COMET_JAR</code>, <code>ICEBERG_JAR</code>, <code>ICEBERG_WAREHOUSE</code>, <code>ICEBERG_CATALOG</code> and <code>ICEBERG_DATABASE</code> first. Create output directories and verify the effective command with <code>--dry-run</code>. The displayed commands retain the harness&#39;s planning/explain overhead; they reproduce that measurement shape, not an isolated native-kernel benchmark.</p>
+<p>For a defensible new comparison:</p>
+<ol>
+<li>Record hardware, OS, Java/Python, Spark/Scala, Iceberg, Comet SHA, local diff and JAR checksum. Do not substitute the current checkout for the binary that actually ran.</li>
+<li>Record every table&#39;s schema, row count, snapshot ID, partition spec, sort order, data/delete file count, bytes, compression and row-group layout.</li>
+<li>Fix the resource envelope, AQE/join settings, shuffle settings, cache policy and storage location across arms. Explicitly report deliberate differences.</li>
+<li>Separate warm-up and measured repetitions. Alternate engine ordering where practical; report all samples, medians and spread. Do not silently discard slow queries.</li>
+<li>Compare outputs for every query and repetition, including schemas, nulls, decimals and ordering where required. Treat mismatches as failures before reporting speedups.</li>
+<li>Capture final plans, fallback explanations, Spark event logs, scan rows/bytes, shuffle bytes/fetch time, spills, GC, native CPU profiles and executor RSS.</li>
+<li>Publish per-query ratios and absolute savings, suite aggregation rules and regressions. Distinguish current native support from what the actual executed plan used.</li>
+</ol>
+<p>Plan capture is opt-in and writes one named file per query per engine, overwriting that filename across iterations. A full 22-query pair should have 44 plan files if all writes succeed. This notebook contains only the two preserved Q6 files; it does not claim the missing 42 were inspected. A capture failure is logged as a warning, so count and inspect the files before calling the evidence complete.</p>
+<h2 id="summary-to-use-in-a-talk">Summary to use in a talk</h2>
+<p>The dataset gives us both large scans and complex relational shapes. Our historic SF1 comparison showed about a 2x total-time improvement, but the gain was not uniform. Q6&#39;s saved plans show how Comet can keep the hot path native; Q18, Q1 and Q9 contributed the largest absolute time savings in the table. Exact causal attribution and repeatability still need the original raw artifacts or a newly controlled run.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="11-tpch-dataset-and-schema.html"><small>Previous</small>TPC-H dataset and schema</a><a href="13-arrow-memory-and-kernels.html"><small>Next</small>Arrow memory and kernels</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

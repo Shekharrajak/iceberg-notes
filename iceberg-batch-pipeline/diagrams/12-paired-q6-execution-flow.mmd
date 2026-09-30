@@ -1,0 +1,19 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph INPUT["Shared query contract"]
+    T[("Iceberg lineitem and four required columns")]
+  end
+  subgraph JVM["Saved Spark plan"]
+    S["BatchScan"] --> R["ColumnarToRow"] --> F["Filter and Project"] --> A["Partial HashAggregate"] --> E["SinglePartition Exchange"] --> Z["Final HashAggregate"]
+  end
+  subgraph NATIVE["Saved Comet plan"]
+    NS["CometIcebergNativeScan"] --> NF["CometFilter and CometProject"] --> NA["Partial CometHashAggregate"] --> NE["CometExchange with native shuffle"] --> NZ["Final CometHashAggregate"] --> NR["CometColumnarToRow for result"]
+  end
+  T --> S
+  T --> NS
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef storage fill:#f1f5f9,stroke:#64748b,color:#334155
+  class S,R,F,A,E,Z spark
+  class NS,NF,NA,NE,NZ,NR native
+  class T storage

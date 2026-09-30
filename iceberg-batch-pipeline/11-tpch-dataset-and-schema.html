@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TPC-H dataset schema and query workload | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html" aria-current="page"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="11-tpch-dataset-and-schema.md">Markdown source</a></header><article><h1 id="tpc-h-dataset-schema-and-query-workload">TPC-H dataset schema and query workload</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#dataset-summary">Dataset summary</a></li>
+<li><a href="#tables-and-scale-factors">Tables and scale factors</a></li>
+<li><a href="#entity-relationships">Entity relationships</a></li>
+<li><a href="#complete-column-reference">Complete column reference</a></li>
+<li><a href="#measures-and-join-examples">Measures and join examples</a></li>
+<li><a href="#from-generated-data-to-iceberg">From generated data to Iceberg</a></li>
+<li><a href="#query-map">Query map</a></li>
+<li><a href="#why-this-dataset-is-useful-for-comet">Why this dataset is useful for Comet</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="12-tpch-spark-versus-comet.html">Spark versus Comet results</a></p>
+<p>TPC-H supplies a synthetic business dataset and a family of analytical queries. In this notebook, the useful model is a wholesaler selling parts to customers, purchasing those parts from suppliers, and tracking orders and shipments. The large transactional tables drive scan volume; the smaller reference tables and relationships create joins, grouping, subqueries and sorting.</p>
+<p>The local Comet workload is named <strong>CometBench-H, derived from TPC-H</strong> in its SQL headers. Our timings are development measurements over Iceberg, not an audited TPC-H result or a QphH score. The official benchmark includes query streams, refresh operations and reporting requirements beyond timing these 22 SQL files. <a href="https://www.tpc.org/tpch/">TPC-H overview</a>.</p>
+<h2 id="dataset-summary">Dataset summary</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Answer</th>
+</tr>
+</thead><tbody><tr>
+<td>How many tables and columns?</td>
+<td>Eight tables; 61 columns in Comet&#39;s current <code>TPCHTables</code> definition</td>
+</tr>
+<tr>
+<td>Largest table?</td>
+<td><code>lineitem</code>, containing individual items within orders</td>
+</tr>
+<tr>
+<td>Other large tables?</td>
+<td><code>orders</code>, then the part/supplier association <code>partsupp</code>; sizes depend on scale factor</td>
+</tr>
+<tr>
+<td>Workload?</td>
+<td>22 analytical query files, with joins, filters, aggregation, sorting and subqueries</td>
+</tr>
+<tr>
+<td>Dataset versus file format?</td>
+<td>TPC-H defines logical data. Parquet stores physical files. Iceberg manages table metadata and snapshots over files.</td>
+</tr>
+<tr>
+<td>What does SF1 mean?</td>
+<td>Approximately 1 GB of reference raw data, not a promise of 1 GB of Parquet, Iceberg storage or runtime memory</td>
+</tr>
+<tr>
+<td>Was the complete historical warehouse inspected?</td>
+<td>No. Its raw files and metadata were not recovered for this update. Distinguish expected dataset properties from measured table properties.</td>
+</tr>
+</tbody></table></div>
+<p>Column names and Spark types below come from the local <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/TPCH.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/TPCH.scala, line 80; opens the local source file" class="source-link">TPCH table definitions</a>, not from an inferred schema of the historical warehouse. The official schema and population rules are in <a href="https://www.tpc.org/tpc_documents_current_versions/pdf/tpc-h_v3.0.1.pdf">TPC-H specification 3.0.1, clauses 1 and 4</a>.</p>
+<h2 id="tables-and-scale-factors">Tables and scale factors</h2>
+<p>These are reference cardinalities before any local deletes or refreshes. <code>lineitem</code> has an approximately linear population, not exactly six million rows times the scale factor. The specification lists <strong>6,001,215</strong> rows at SF1 and <strong>59,986,052</strong> at SF10. <code>nation</code> and <code>region</code> remain fixed. <a href="https://www.tpc.org/tpc_documents_current_versions/pdf/tpc-h_v3.0.1.pdf">Specification, schema figure and LINEITEM cardinality table</a>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Table</th>
+<th>Grain of one row</th>
+<th>Reference row count</th>
+<th align="right">SF1 reference rows</th>
+<th>Main logical key</th>
+</tr>
+</thead><tbody><tr>
+<td><code>region</code></td>
+<td>One geographic region</td>
+<td>5</td>
+<td align="right">5</td>
+<td><code>r_regionkey</code></td>
+</tr>
+<tr>
+<td><code>nation</code></td>
+<td>One nation assigned to a region</td>
+<td>25</td>
+<td align="right">25</td>
+<td><code>n_nationkey</code></td>
+</tr>
+<tr>
+<td><code>supplier</code></td>
+<td>One supplier</td>
+<td>10,000 x SF</td>
+<td align="right">10,000</td>
+<td><code>s_suppkey</code></td>
+</tr>
+<tr>
+<td><code>customer</code></td>
+<td>One customer</td>
+<td>150,000 x SF</td>
+<td align="right">150,000</td>
+<td><code>c_custkey</code></td>
+</tr>
+<tr>
+<td><code>part</code></td>
+<td>One product/part</td>
+<td>200,000 x SF</td>
+<td align="right">200,000</td>
+<td><code>p_partkey</code></td>
+</tr>
+<tr>
+<td><code>partsupp</code></td>
+<td>One part offered by one supplier</td>
+<td>800,000 x SF</td>
+<td align="right">800,000</td>
+<td><code>(ps_partkey, ps_suppkey)</code></td>
+</tr>
+<tr>
+<td><code>orders</code></td>
+<td>One customer order</td>
+<td>1,500,000 x SF</td>
+<td align="right">1,500,000</td>
+<td><code>o_orderkey</code></td>
+</tr>
+<tr>
+<td><code>lineitem</code></td>
+<td>One numbered line within an order</td>
+<td>Approximately 6,000,000 x SF</td>
+<td align="right">6,001,215</td>
+<td><code>(l_orderkey, l_linenumber)</code></td>
+</tr>
+</tbody></table></div>
+<p>At SF1 these counts sum to 8,661,245 rows. This is reference arithmetic, not a count performed against our old Iceberg snapshot. After the merge-on-read modification, logical row counts are lower even though the original data-file records may still exist physically.</p>
+<p>Scale changes several costs at once: bytes to read, join-build size, aggregation cardinality, shuffle volume and memory pressure. A query that fits comfortably in memory at SF1 may spill or choose a different join strategy at SF100. Multiplying an SF1 runtime by 100 is not a capacity model.</p>
+<h2 id="entity-relationships">Entity relationships</h2>
+<p>This is a logical key diagram, not a claim that Iceberg enforces primary or foreign keys. Zero-or-more notation on the child side expresses the relationship, not the exact generated population per parent. Blue is geography, green is customer/order activity, and orange is the part/supplier catalog.</p>
+<figure class="diagram" id="diagram-11-entity-relationships"><figcaption><span>Entity relationships</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-11-entity-relationships" hidden>Actual size</button><a href="diagrams/11-entity-relationships.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/11-entity-relationships.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-11-entity-relationships" tabindex="0" role="region" aria-label="Entity relationships"><img src="diagrams/11-entity-relationships.svg" width="1775" height="591" alt="Entity relationships"></div></figure>
+<p>The <code>partsupp -&gt; lineitem</code> relationship uses <strong>both</strong> part and supplier keys. Joining on <code>partkey</code> alone can multiply rows across suppliers and corrupt revenue or cost totals. Q9 explicitly joins both columns when subtracting supply cost. Similarly, <code>l_orderkey</code> alone is not a line-item identifier; all lines in an order share it.</p>
+<h2 id="complete-column-reference">Complete column reference</h2>
+<p>Types are the default Spark mapping in the checked Comet generator: <code>long</code> becomes SQL <code>BIGINT</code>, decimal fields are <code>DECIMAL(12,2)</code>, dates are <code>DATE</code>, and character fields are <code>STRING</code>. Do not treat these as the only legal TPC-H SQL types. The generator&#39;s optional type-conversion machinery can replace decimal with double or date with string; doing that changes the execution and correctness workload. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/Tables.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/Tables.scala, line 114; opens the local source file" class="source-link">Type conversion code</a>.</p>
+<p>The keys described here are logical identities. The converter creates tables with <code>CREATE TABLE ... AS SELECT</code>; it does not declare these primary/foreign-key constraints. Generated and read schemas can contain nullable fields, so the <code>isnotnull</code> predicates visible in saved Spark plans are not surprising.</p>
+<h3 id="region">REGION</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>r_regionkey</code></td>
+<td>BIGINT</td>
+<td>Region identity</td>
+</tr>
+<tr>
+<td><code>r_name</code></td>
+<td>STRING</td>
+<td>Region label used by filters</td>
+</tr>
+<tr>
+<td><code>r_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<h3 id="nation">NATION</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>n_nationkey</code></td>
+<td>BIGINT</td>
+<td>Nation identity</td>
+</tr>
+<tr>
+<td><code>n_name</code></td>
+<td>STRING</td>
+<td>Nation label used by filters and grouping</td>
+</tr>
+<tr>
+<td><code>n_regionkey</code></td>
+<td>BIGINT</td>
+<td>Reference to <code>region</code></td>
+</tr>
+<tr>
+<td><code>n_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<h3 id="supplier">SUPPLIER</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>s_suppkey</code></td>
+<td>BIGINT</td>
+<td>Supplier identity</td>
+</tr>
+<tr>
+<td><code>s_name</code></td>
+<td>STRING</td>
+<td>Supplier name</td>
+</tr>
+<tr>
+<td><code>s_address</code></td>
+<td>STRING</td>
+<td>Supplier address</td>
+</tr>
+<tr>
+<td><code>s_nationkey</code></td>
+<td>BIGINT</td>
+<td>Supplier&#39;s nation</td>
+</tr>
+<tr>
+<td><code>s_phone</code></td>
+<td>STRING</td>
+<td>Phone text; not an integer</td>
+</tr>
+<tr>
+<td><code>s_acctbal</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Account balance</td>
+</tr>
+<tr>
+<td><code>s_comment</code></td>
+<td>STRING</td>
+<td>Text inspected by predicates such as Q16&#39;s complaint test</td>
+</tr>
+</tbody></table></div>
+<h3 id="customer">CUSTOMER</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>c_custkey</code></td>
+<td>BIGINT</td>
+<td>Customer identity</td>
+</tr>
+<tr>
+<td><code>c_name</code></td>
+<td>STRING</td>
+<td>Customer name</td>
+</tr>
+<tr>
+<td><code>c_address</code></td>
+<td>STRING</td>
+<td>Customer address</td>
+</tr>
+<tr>
+<td><code>c_nationkey</code></td>
+<td>BIGINT</td>
+<td>Customer&#39;s nation</td>
+</tr>
+<tr>
+<td><code>c_phone</code></td>
+<td>STRING</td>
+<td>Phone text; Q22 extracts a prefix</td>
+</tr>
+<tr>
+<td><code>c_acctbal</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Account balance</td>
+</tr>
+<tr>
+<td><code>c_mktsegment</code></td>
+<td>STRING</td>
+<td>Market segment, for example Q3&#39;s <code>BUILDING</code> filter</td>
+</tr>
+<tr>
+<td><code>c_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<h3 id="part">PART</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>p_partkey</code></td>
+<td>BIGINT</td>
+<td>Part identity</td>
+</tr>
+<tr>
+<td><code>p_name</code></td>
+<td>STRING</td>
+<td>Part name, including text searched by Q9 and Q20</td>
+</tr>
+<tr>
+<td><code>p_mfgr</code></td>
+<td>STRING</td>
+<td>Manufacturer label</td>
+</tr>
+<tr>
+<td><code>p_brand</code></td>
+<td>STRING</td>
+<td>Brand label</td>
+</tr>
+<tr>
+<td><code>p_type</code></td>
+<td>STRING</td>
+<td>Product classification</td>
+</tr>
+<tr>
+<td><code>p_size</code></td>
+<td>INT</td>
+<td>Size category</td>
+</tr>
+<tr>
+<td><code>p_container</code></td>
+<td>STRING</td>
+<td>Container classification</td>
+</tr>
+<tr>
+<td><code>p_retailprice</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Retail price</td>
+</tr>
+<tr>
+<td><code>p_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<h3 id="partsupp">PARTSUPP</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>ps_partkey</code></td>
+<td>BIGINT</td>
+<td>Part side of the composite key</td>
+</tr>
+<tr>
+<td><code>ps_suppkey</code></td>
+<td>BIGINT</td>
+<td>Supplier side of the composite key</td>
+</tr>
+<tr>
+<td><code>ps_availqty</code></td>
+<td>INT</td>
+<td>Available quantity for this supplier/part pair</td>
+</tr>
+<tr>
+<td><code>ps_supplycost</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Unit supply cost</td>
+</tr>
+<tr>
+<td><code>ps_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<h3 id="orders">ORDERS</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>o_orderkey</code></td>
+<td>BIGINT</td>
+<td>Order identity; not a row number or file position</td>
+</tr>
+<tr>
+<td><code>o_custkey</code></td>
+<td>BIGINT</td>
+<td>Customer placing the order</td>
+</tr>
+<tr>
+<td><code>o_orderstatus</code></td>
+<td>STRING</td>
+<td>Order status code</td>
+</tr>
+<tr>
+<td><code>o_totalprice</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Order total</td>
+</tr>
+<tr>
+<td><code>o_orderdate</code></td>
+<td>DATE</td>
+<td>Order creation date</td>
+</tr>
+<tr>
+<td><code>o_orderpriority</code></td>
+<td>STRING</td>
+<td>Business priority classification</td>
+</tr>
+<tr>
+<td><code>o_clerk</code></td>
+<td>STRING</td>
+<td>Clerk identifier stored as text</td>
+</tr>
+<tr>
+<td><code>o_shippriority</code></td>
+<td>INT</td>
+<td>Shipping priority code</td>
+</tr>
+<tr>
+<td><code>o_comment</code></td>
+<td>STRING</td>
+<td>Text inspected by Q13</td>
+</tr>
+</tbody></table></div>
+<h3 id="lineitem">LINEITEM</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Column</th>
+<th>Spark type</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>l_orderkey</code></td>
+<td>BIGINT</td>
+<td>Order reference and first part of the line-item key</td>
+</tr>
+<tr>
+<td><code>l_partkey</code></td>
+<td>BIGINT</td>
+<td>Purchased part</td>
+</tr>
+<tr>
+<td><code>l_suppkey</code></td>
+<td>BIGINT</td>
+<td>Supplying vendor; paired with <code>l_partkey</code> for <code>partsupp</code></td>
+</tr>
+<tr>
+<td><code>l_linenumber</code></td>
+<td>INT</td>
+<td>Line identifier within the order</td>
+</tr>
+<tr>
+<td><code>l_quantity</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Quantity; decimal in this generator, not INT</td>
+</tr>
+<tr>
+<td><code>l_extendedprice</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Extended line price before the query&#39;s discount/tax arithmetic</td>
+</tr>
+<tr>
+<td><code>l_discount</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Fractional discount; <code>0.04</code> means four percent</td>
+</tr>
+<tr>
+<td><code>l_tax</code></td>
+<td>DECIMAL(12,2)</td>
+<td>Fractional tax</td>
+</tr>
+<tr>
+<td><code>l_returnflag</code></td>
+<td>STRING</td>
+<td>Return-status code</td>
+</tr>
+<tr>
+<td><code>l_linestatus</code></td>
+<td>STRING</td>
+<td>Line-status code</td>
+</tr>
+<tr>
+<td><code>l_shipdate</code></td>
+<td>DATE</td>
+<td>Shipment date, often used for scan filtering</td>
+</tr>
+<tr>
+<td><code>l_commitdate</code></td>
+<td>DATE</td>
+<td>Committed delivery date</td>
+</tr>
+<tr>
+<td><code>l_receiptdate</code></td>
+<td>DATE</td>
+<td>Receipt date; comparison with commit date identifies lateness</td>
+</tr>
+<tr>
+<td><code>l_shipinstruct</code></td>
+<td>STRING</td>
+<td>Shipping instructions</td>
+</tr>
+<tr>
+<td><code>l_shipmode</code></td>
+<td>STRING</td>
+<td>Shipping mode</td>
+</tr>
+<tr>
+<td><code>l_comment</code></td>
+<td>STRING</td>
+<td>Descriptive text</td>
+</tr>
+</tbody></table></div>
+<p>The date columns are not interchangeable. Q6 filters shipment date, Q3 combines order and shipment dates, and Q12 compares shipment, commitment and receipt dates. A partition spec based on one date does not automatically prune a predicate on another.</p>
+<h2 id="measures-and-join-examples">Measures and join examples</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Measure</th>
+<th>Expression or relationship</th>
+<th>Why the distinction matters</th>
+</tr>
+</thead><tbody><tr>
+<td>Discounted revenue</td>
+<td><code>l_extendedprice * (1 - l_discount)</code></td>
+<td>Used by multiple revenue queries</td>
+</tr>
+<tr>
+<td>Discount amount</td>
+<td><code>l_extendedprice * l_discount</code></td>
+<td>Q6 measures this amount, not full discounted sales revenue</td>
+</tr>
+<tr>
+<td>Tax-inclusive charge</td>
+<td><code>l_extendedprice * (1 - l_discount) * (1 + l_tax)</code></td>
+<td>Extra decimal arithmetic in Q1</td>
+</tr>
+<tr>
+<td>Profit-like amount</td>
+<td>Discounted revenue minus <code>ps_supplycost * l_quantity</code></td>
+<td>Q9 needs the correct part/supplier pair</td>
+</tr>
+<tr>
+<td>Inventory value</td>
+<td><code>ps_supplycost * ps_availqty</code></td>
+<td>Q11 works on inventory rather than orders</td>
+</tr>
+<tr>
+<td>Customer order count</td>
+<td>Customer left join orders, then count order key</td>
+<td>Q13 must retain customers without qualifying orders</td>
+</tr>
+</tbody></table></div>
+<p>These formulas explain the checked SQL, not an accounting recommendation. Decimal expression output precision and aggregation state can be wider than the source&#39;s <code>DECIMAL(12,2)</code>; native execution must preserve Spark&#39;s expression semantics.</p>
+<h2 id="from-generated-data-to-iceberg">From generated data to Iceberg</h2>
+<figure class="diagram" id="diagram-11-from-generated-data-to-iceberg"><figcaption><span>From generated data to Iceberg</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-11-from-generated-data-to-iceberg" hidden>Actual size</button><a href="diagrams/11-from-generated-data-to-iceberg.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/11-from-generated-data-to-iceberg.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-11-from-generated-data-to-iceberg" tabindex="0" role="region" aria-label="From generated data to Iceberg"><img src="diagrams/11-from-generated-data-to-iceberg.svg" width="2141" height="296" alt="From generated data to Iceberg"></div></figure>
+<p>Pinning the same snapshot is a comparison requirement in this diagram. The current harness registers the current table; it does not itself enforce snapshot immutability across the two engine runs. Ensure no concurrent writes, or explicitly use equivalent pinned snapshots.</p>
+<p>The <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/GenTPCHData.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/GenTPCHData.scala, line 41; opens the local source file" class="source-link">generator entry point</a> invokes <code>dbgen</code>, casts generated fields and writes Spark output. Its defaults include SF1, Parquet, 100 generation partitions and no table partitioning. Those are current defaults, not recovered arguments for the historical run. Generation partitions, output files and benchmark scan tasks are different quantities.</p>
+<p>The <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/create-iceberg-tables.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/create-iceberg-tables.py, line 132; opens the local source file" class="source-link">Iceberg converter</a> reads <code>table.parquet</code> or <code>table/</code>, then writes new Iceberg tables. It is not a metadata-only registration of the source Parquet files. CTAS may change file counts, compression, row-group layout and clustering.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Preparation choice</th>
+<th>Checked converter behavior</th>
+<th>Interpretation</th>
+</tr>
+</thead><tbody><tr>
+<td>Default</td>
+<td>Unpartitioned Iceberg tables</td>
+<td>Do not assume generator folder partitions become an Iceberg partition spec</td>
+</tr>
+<tr>
+<td><code>--partitioned</code></td>
+<td><code>months(l_shipdate)</code> for lineitem and <code>months(o_orderdate)</code> for orders</td>
+<td>Other six tables remain unpartitioned in this mapping</td>
+</tr>
+<tr>
+<td><code>--mor-delete-pct N</code></td>
+<td>Format v2 and MOR table properties; deletes orders/lineitem where order key modulo 100 is below N</td>
+<td>Deterministic key predicate, not independent random deletion of exactly N percent of every file</td>
+</tr>
+<tr>
+<td>Re-running converter</td>
+<td>Drops the named tables before recreating them</td>
+<td>Use a dedicated benchmark warehouse; do not run against valuable tables</td>
+</tr>
+</tbody></table></div>
+<p>The SF1 MOR chart is labelled 5% deletes, but the preserved chart alone does not reveal the actual logical row count, delete-file count, partition spec or snapshot ID. The converter reports actual deleted rows when executed; retain that log in a new run. This modification is not the standard TPC-H refresh workload.</p>
+<h2 id="query-map">Query map</h2>
+<p>This map is derived from the current <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/queries/tpch/q1.sql" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/queries/tpch/q1.sql, line 1; opens the local source file" class="source-link">22 CometBench-H SQL files</a>. Names below describe the business question; they do not imply a particular physical join algorithm. SQL aliases and subqueries can scan a base table more than once.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Query</th>
+<th>Business question</th>
+<th>Main tables</th>
+<th>Work the SQL asks the engine to do</th>
+</tr>
+</thead><tbody><tr>
+<td>Q1</td>
+<td>Summarize shipped quantities and prices by status</td>
+<td>lineitem</td>
+<td>Date filter, eight aggregate expressions, two grouping keys, sort</td>
+</tr>
+<tr>
+<td>Q2</td>
+<td>Find low-cost suppliers for selected parts in a region</td>
+<td>part, partsupp, supplier, nation, region</td>
+<td>Joins, correlated minimum, ordering and top 100</td>
+</tr>
+<tr>
+<td>Q3</td>
+<td>Rank revenue from selected customers&#39; orders</td>
+<td>customer, orders, lineitem</td>
+<td>Segment/date filters, joins, aggregate and top 10</td>
+</tr>
+<tr>
+<td>Q4</td>
+<td>Count orders having a late-received line</td>
+<td>orders, lineitem</td>
+<td>Date range, EXISTS, grouping and sort</td>
+</tr>
+<tr>
+<td>Q5</td>
+<td>Revenue associated with suppliers and customers in a region</td>
+<td>customer, orders, lineitem, supplier, nation, region</td>
+<td>Six-table join, date filter and revenue aggregation</td>
+</tr>
+<tr>
+<td>Q6</td>
+<td>Sum discount amounts under date/quantity/discount conditions</td>
+<td>lineitem</td>
+<td>Four-column scan, filter and global sum; no join</td>
+</tr>
+<tr>
+<td>Q7</td>
+<td>Revenue between two nations over time</td>
+<td>supplier, lineitem, orders, customer, nation</td>
+<td>Two nation aliases, joins, year extraction and aggregate</td>
+</tr>
+<tr>
+<td>Q8</td>
+<td>A nation&#39;s share of a market</td>
+<td>part, supplier, lineitem, orders, customer, nation, region</td>
+<td>Eight relation references including two nation aliases, CASE and ratio</td>
+</tr>
+<tr>
+<td>Q9</td>
+<td>Profit by nation and year for selected parts</td>
+<td>part, supplier, lineitem, partsupp, orders, nation</td>
+<td>Text filter, composite-key join, decimal profit arithmetic</td>
+</tr>
+<tr>
+<td>Q10</td>
+<td>Rank customers by returned-item revenue</td>
+<td>customer, orders, lineitem, nation</td>
+<td>Date/return filters, wide grouped output and top 20</td>
+</tr>
+<tr>
+<td>Q11</td>
+<td>Identify large inventory-value positions</td>
+<td>partsupp, supplier, nation</td>
+<td>Aggregation and HAVING against a scalar aggregate subquery</td>
+</tr>
+<tr>
+<td>Q12</td>
+<td>Compare shipping modes and order priorities</td>
+<td>orders, lineitem</td>
+<td>Date comparisons, join and conditional counts</td>
+</tr>
+<tr>
+<td>Q13</td>
+<td>Distribution of customer order counts</td>
+<td>customer, orders</td>
+<td>Filtered left outer join and two levels of grouping</td>
+</tr>
+<tr>
+<td>Q14</td>
+<td>Promotional share of revenue</td>
+<td>lineitem, part</td>
+<td>Join, CASE, two sums and ratio</td>
+</tr>
+<tr>
+<td>Q15</td>
+<td>Find suppliers with maximum period revenue</td>
+<td>lineitem, supplier</td>
+<td>Temporary view, grouped sum, maximum subquery and supplier join</td>
+</tr>
+<tr>
+<td>Q16</td>
+<td>Count qualifying suppliers per part category</td>
+<td>part, partsupp, supplier</td>
+<td>String predicates, NOT IN, distinct count and sort</td>
+</tr>
+<tr>
+<td>Q17</td>
+<td>Revenue from unusually small line quantities</td>
+<td>lineitem, part</td>
+<td>Brand/container filter, correlated average and final sum</td>
+</tr>
+<tr>
+<td>Q18</td>
+<td>Rank large-quantity orders</td>
+<td>customer, orders, lineitem</td>
+<td>Grouped subquery, membership test, joins, aggregate and top 100</td>
+</tr>
+<tr>
+<td>Q19</td>
+<td>Revenue for several part/shipping categories</td>
+<td>lineitem, part</td>
+<td>Join with three OR branches and a global sum</td>
+</tr>
+<tr>
+<td>Q20</td>
+<td>Find suppliers with sufficient inventory</td>
+<td>supplier, nation, partsupp, part, lineitem</td>
+<td>Nested membership tests and correlated quantity aggregation</td>
+</tr>
+<tr>
+<td>Q21</td>
+<td>Count supplier delays under multi-supplier conditions</td>
+<td>supplier, lineitem, orders, nation</td>
+<td>Repeated lineitem aliases, EXISTS and NOT EXISTS, aggregate, top 100</td>
+</tr>
+<tr>
+<td>Q22</td>
+<td>Find positive-balance customers without orders</td>
+<td>customer, orders</td>
+<td>Phone-prefix filter, average subquery, anti-existence and grouping</td>
+</tr>
+</tbody></table></div>
+<p><code>EXISTS</code> and correlated SQL do not require a literal per-row subquery loop. Catalyst can rewrite them to joins and aggregate plans. Inspect the captured physical plan before assigning a join type, scan count or repeated-scan cost.</p>
+<h2 id="why-this-dataset-is-useful-for-comet">Why this dataset is useful for Comet</h2>
+<p>The workload spans different bottlenecks. Q6 makes scan and columnar-to-row boundaries easy to inspect. Q1 adds many decimal aggregates. Q5/Q9/Q18 stress joins and intermediate data movement. Q13/Q16/Q21/Q22 add outer, distinct, anti or existence semantics that are important for eligibility and correctness.</p>
+<p>Parquet projection, Iceberg file pruning and native execution are separate effects. Reading four columns instead of sixteen is useful, but both saved Q6 plans already request the same four columns. That shared optimization cannot, by itself, explain the difference between those two engines.</p>
+<p>Use the <a href="12-tpch-spark-versus-comet.html">benchmark chapter</a> to see the measured historic timings, the preserved Q6 operator changes, and the limits of what the surviving artifacts prove.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="10-datafusion-and-connector.html"><small>Previous</small>DataFusion and connector</a><a href="12-tpch-spark-versus-comet.html"><small>Next</small>TPC-H benchmark findings</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

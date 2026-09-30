@@ -1,0 +1,31 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph STORAGE["Outside the CPU"]
+    O[("Object store or SSD")]
+    D[("DRAM buffers")]
+    O --> D
+  end
+  subgraph CACHE["CPU memory hierarchy"]
+    L["Last-level and private caches"]
+    R["Scalar and vector registers"]
+    D --> L --> R
+  end
+  subgraph EXECUTE["Core execution"]
+    K["Decode or compute instructions"]
+    W["Output stores and temporary buffers"]
+    R --> K --> W
+    W --> L
+  end
+  subgraph PARALLEL["Competing work"]
+    T["Other cores and executor tasks"]
+    T --> D
+    T --> L
+  end
+  classDef storage fill:#f1f5f9,stroke:#64748b,color:#334155
+  classDef cache fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef task fill:#dcfce7,stroke:#16a34a,color:#14532d
+  class O,D storage
+  class L,R cache
+  class K,W compute
+  class T task

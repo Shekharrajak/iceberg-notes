@@ -1,0 +1,31 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph PLAN["Iceberg and Spark control"]
+    S["Snapshot and file-task planning"]
+    T["Spark executor task"]
+    S --> T
+  end
+  subgraph READER["Native Iceberg and Parquet reader"]
+    M["File metadata and field-ID mapping"]
+    G["Candidate row groups and selected rows"]
+    D["Load applicable delete artifacts"]
+    P["Fetch and decode projected pages"]
+    A["Arrow batches with table semantics"]
+    T --> M --> G --> P --> A
+    T --> D
+    D --> G
+    D --> P
+  end
+  subgraph COMPUTE["Eligible native operators"]
+    F["Residuals and expressions"]
+    O["Aggregate join sort or exchange"]
+    A --> F --> O
+  end
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef io fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  class S,T control
+  class M,G,D metadata
+  class P io
+  class A,F,O native

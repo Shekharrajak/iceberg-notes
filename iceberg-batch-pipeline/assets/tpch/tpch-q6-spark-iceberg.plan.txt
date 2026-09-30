@@ -1,0 +1,42 @@
+== Physical Plan ==
+* HashAggregate (7)
++- Exchange (6)
+   +- * HashAggregate (5)
+      +- * Project (4)
+         +- * Filter (3)
+            +- * ColumnarToRow (2)
+               +- BatchScan local.tpch.lineitem (1)
+
+
+(1) BatchScan local.tpch.lineitem
+Output [4]: [l_extendedprice#14, l_discount#15, l_shipdate#16, l_quantity#17]
+local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_discount IS NOT NULL, l_quantity IS NOT NULL, l_shipdate >= 8766, l_shipdate < 9131, l_discount >= 0.03, l_discount <= 0.05, l_quantity < 24.00, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [4]: [l_extendedprice#14, l_discount#15, l_shipdate#16, l_quantity#17]
+
+(3) Filter [codegen id : 1]
+Input [4]: [l_extendedprice#14, l_discount#15, l_shipdate#16, l_quantity#17]
+Condition : ((((isnotnull(l_discount#15) AND isnotnull(l_quantity#17)) AND (l_discount#15 >= 0.03)) AND (l_discount#15 <= 0.05)) AND (l_quantity#17 < 24.00))
+
+(4) Project [codegen id : 1]
+Output [2]: [l_extendedprice#14, l_discount#15]
+Input [4]: [l_extendedprice#14, l_discount#15, l_shipdate#16, l_quantity#17]
+
+(5) HashAggregate [codegen id : 1]
+Input [2]: [l_extendedprice#14, l_discount#15]
+Keys: []
+Functions [1]: [partial_sum((l_extendedprice#14 * l_discount#15))]
+Aggregate Attributes [2]: [sum#29, isEmpty#30]
+Results [2]: [sum#31, isEmpty#32]
+
+(6) Exchange
+Input [2]: [sum#31, isEmpty#32]
+Arguments: SinglePartition, ENSURE_REQUIREMENTS, [plan_id=61]
+
+(7) HashAggregate [codegen id : 2]
+Input [2]: [sum#31, isEmpty#32]
+Keys: []
+Functions [1]: [sum((l_extendedprice#14 * l_discount#15))]
+Aggregate Attributes [1]: [sum((l_extendedprice#14 * l_discount#15))#23]
+Results [1]: [sum((l_extendedprice#14 * l_discount#15))#23 AS revenue#13]

@@ -53,6 +53,7 @@ figcaption{display:flex;justify-content:space-between;align-items:center;flex-wr
 .diagram-view{overflow:auto;padding:18px}
 .diagram-view img{display:block;width:100%;max-width:100%;height:auto;margin:0 auto}
 .diagram.actual-size .diagram-view img{width:auto;max-width:none;margin:0}
+.evidence-image{display:block;max-width:100%;height:auto;margin:24px auto;border:1px solid var(--line);border-radius:6px}
 .pager{display:flex;justify-content:space-between;gap:24px;border-top:1px solid var(--line);margin-top:48px;padding-top:24px}
 .pager a{max-width:48%;text-decoration:none;font-size:15px}
 .pager a:last-child{text-align:right}

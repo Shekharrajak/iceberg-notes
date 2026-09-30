@@ -19,7 +19,27 @@ const outputName = file => file === 'README.md' ? 'index.html' : file.replace(/\
 const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const slug = value => value.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s/g, '-');
 const titles = new Map([...documents].map(([file, text]) => [file, text.match(/^# (.+)$/m)?.[1] ?? file]));
-const labels = ['Overview', 'System architecture', 'Iceberg scans', 'Parquet read and write', 'Runtime and serialization', 'Distributed execution', 'Writes and commits', 'Fault tolerance', 'Capabilities and gaps', 'Source ledger', 'DataFusion and connector', 'Validation', 'Rendering guide'];
+const shortLabels = new Map([
+  ['README.md', 'Overview'],
+  ['01-system-architecture.md', 'System architecture'],
+  ['02-iceberg-scan.md', 'Iceberg scans'],
+  ['03-parquet.md', 'Parquet read and write'],
+  ['04-native-runtime-and-serde.md', 'Runtime and serialization'],
+  ['05-distributed-execution.md', 'Distributed execution'],
+  ['06-iceberg-write.md', 'Writes and commits'],
+  ['07-fault-tolerance.md', 'Fault tolerance'],
+  ['08-capabilities-and-debugging.md', 'Capabilities and gaps'],
+  ['09-source-ledger.md', 'Source ledger'],
+  ['10-datafusion-and-connector.md', 'DataFusion and connector'],
+  ['11-tpch-dataset-and-schema.md', 'TPC-H dataset and schema'],
+  ['12-tpch-spark-versus-comet.md', 'TPC-H benchmark findings'],
+  ['13-arrow-memory-and-kernels.md', 'Arrow memory and kernels'],
+  ['14-vectorization-and-hardware.md', 'Vectorization and hardware'],
+  ['15-arrow-in-iceberg-scan-and-rewrite.md', 'Arrow scans and rewrites'],
+  ['VALIDATION.md', 'Validation'],
+  ['scripts/README.md', 'Rendering guide']
+]);
+const labels = files.map(file => shortLabels.get(file) ?? titles.get(file));
 const pages = [];
 
 for (const [file, markdown] of documents) {
@@ -48,6 +68,7 @@ for (const [file, markdown] of documents) {
     return `<figure class="diagram" id="diagram-${item.id}"><figcaption><span>${escape(item.title)}</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-${item.id}" hidden>Actual size</button><a href="${svg}" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="${relative(`diagrams/${item.source}`)}">Mermaid</a></span></figcaption><div class="diagram-view" id="view-${item.id}" tabindex="0" role="region" aria-label="${escape(item.title)}"><img src="${svg}" width="${item.width}" height="${item.height}" alt="${escape(item.title)}"></div></figure>\n`;
   };
   renderer.table = (header, body) => `<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead>${header}</thead><tbody>${body}</tbody></table></div>\n`;
+  renderer.image = (href, title, text) => `<img class="evidence-image" src="${escape(href)}" alt="${escape(text)}"${title ? ` title="${escape(title)}"` : ''}>`;
   renderer.html = html => escape(html);
   renderer.link = (href, title, text) => {
     let source = false;
@@ -73,7 +94,7 @@ for (const [file, markdown] of documents) {
   const pager = [[index - 1, 'Previous'], [index + 1, 'Next']].map(([position, label]) => files[position] ? `<a href="${relative(outputName(files[position]))}"><small>${label}</small>${escape(labels[position])}</a>` : '<span></span>').join('');
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(titles.get(file))} | Iceberg batch notebook</title><link rel="stylesheet" href="${relative('assets/notes.css')}"><script defer src="${relative('assets/notes.js')}"></script></head>
-<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="${relative('index.html')}">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol>${chapterNav}</ol></nav></details><a class="gallery-link" href="${relative('diagrams/index.html')}">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="${relative(file)}">Markdown source</a></header><article>${content.replace(/(<\/h1>)/, `$1\n${toc ? `<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul>${toc}</ul></nav></details>` : ''}`)}</article><nav class="pager" aria-label="Chapter pagination">${pager}</nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>\n`;
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="${relative('index.html')}">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol>${chapterNav}</ol></nav></details><a class="gallery-link" href="${relative('diagrams/index.html')}">Browse all ${diagramManifest.diagrams.length} diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="${relative(file)}">Markdown source</a></header><article>${content.replace(/(<\/h1>)/, `$1\n${toc ? `<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul>${toc}</ul></nav></details>` : ''}`)}</article><nav class="pager" aria-label="Chapter pagination">${pager}</nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>\n`;
   await fs.writeFile(path.join(root, output), html);
   pages.push({ source: file, html: output, title: titles.get(file), headings: headings.length, diagrams: chapterDiagrams.length, sha256: createHash('sha256').update(markdown).digest('hex') });
 }

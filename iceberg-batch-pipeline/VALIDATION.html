@@ -11,9 +11,16 @@
 <li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
 <li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
 <li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
 <li><a href="VALIDATION.html" aria-current="page"><span class="chapter-number"></span>Validation</a></li>
-<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="VALIDATION.md">Markdown source</a></header><article><h1 id="documentation-validation">Documentation validation</h1>
-<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#formatted-notebook">Formatted notebook</a></li></ul></nav></details>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="VALIDATION.md">Markdown source</a></header><article><h1 id="documentation-validation">Documentation validation</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#formatted-notebook">Formatted notebook</a></li>
+<li><a href="#arrow-and-hardware-evidence-limits">Arrow and hardware evidence limits</a></li>
+<li><a href="#benchmark-evidence-limits">Benchmark evidence limits</a></li></ul></nav></details>
 <p>Checked on 2026-09-30 against the local revisions recorded in the source ledger. Engine tests and benchmarks were not run for this notebook. Named tests in the chapters are inspected coverage evidence, not passing results from this session.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
 <th>Check</th>
@@ -21,11 +28,11 @@
 </tr>
 </thead><tbody><tr>
 <td>Root Markdown and source links</td>
-<td>12 Markdown files and 154 local links passed path, anchor and source-line checks</td>
+<td>17 Markdown files and 274 local links passed path, anchor and source-line checks</td>
 </tr>
 <tr>
 <td>Mermaid syntax and rendering</td>
-<td>All 29 diagrams parsed and rendered with Mermaid 11.17.2</td>
+<td>All 40 diagrams parsed and rendered with Mermaid 11.17.2</td>
 </tr>
 <tr>
 <td>Generated-source parity</td>
@@ -33,7 +40,7 @@
 </tr>
 <tr>
 <td>SVG XML</td>
-<td>All 29 standalone SVGs passed <code>xmllint --noout</code></td>
+<td>All 40 standalone SVGs passed <code>xmllint --noout</code></td>
 </tr>
 <tr>
 <td>Fonts</td>
@@ -41,15 +48,31 @@
 </tr>
 <tr>
 <td>Desktop gallery</td>
-<td>All 29 images decoded at 1440 x 1100; no document-level horizontal overflow</td>
+<td>All 40 images decoded at 1440 x 1100; no document-level horizontal overflow</td>
 </tr>
 <tr>
 <td>Mobile gallery</td>
-<td>All 29 images decoded at 390 x 844; no document-level horizontal overflow</td>
+<td>All 40 images decoded at 390 x 844; no document-level horizontal overflow</td>
 </tr>
 <tr>
 <td>Visual review</td>
-<td>Inspected desktop/mobile gallery screenshots and representative flow/sequence diagrams, including the native scan and stream-execution paths</td>
+<td>Inspected all seven new Arrow/hardware/scan/rewrite diagrams and representative desktop/mobile pages; corrected ownership-diagram routing; previous TPC-H and scan/stream reviews remain applicable</td>
+</tr>
+<tr>
+<td>TPC-H evidence consistency</td>
+<td>Checked 22 transcribed timings, recalculated ratios/savings/totals, 61 column entries, 22 query descriptions and saved Q6 operator names</td>
+</tr>
+<tr>
+<td>Source correspondence</td>
+<td>All 22 timings match the source deck; all 61 names/types match <code>TPCH.scala</code>; four copied charts/plans are byte-identical to the preserved originals</td>
+</tr>
+<tr>
+<td>Arrow teaching examples</td>
+<td>Checked validity/selection masks, string offsets, batch-memory totals, bandwidth floor and serial-fraction arithmetic; these are illustrative calculations, not kernel tests</td>
+</tr>
+<tr>
+<td>JavaScript syntax</td>
+<td>All rendering and validation scripts passed <code>node --check</code></td>
 </tr>
 <tr>
 <td>Scope</td>
@@ -58,14 +81,19 @@
 </tbody></table></div>
 <p>The offline gallery uses scrollable panels for wide diagrams; this is intentional, not a claim that each diagram fits a phone screen. Automated rendering checks do not establish implementation correctness or exhaustive absence of visual overlap.</p>
 <h2 id="formatted-notebook">Formatted notebook</h2>
-<p>The browser notebook contains 13 generated HTML pages: the index, ten chapters, validation record and rendering guide. All 29 existing diagrams appear inline with their surrounding prose. Markdown remains the content source.</p>
+<p>The browser notebook contains 18 generated HTML pages: the index, fifteen chapters, validation record and rendering guide. All 40 diagrams and both preserved benchmark charts appear inline with their surrounding prose. Markdown remains the content source.</p>
 <ul>
 <li>Checked every page at 1440 x 1100 and 390 x 844: headings, diagram counts, image decoding, fonts, responsive navigation and diagram zoom controls passed.</li>
-<li>Verified 280 unique local links and assets, including chapter anchors; no network requests or browser errors occurred.</li>
+<li>Verified local links and assets, including chapter anchors; no network requests or browser errors occurred.</li>
 <li>Checked source hashes against the generated-page manifest to detect stale HTML.</li>
 <li>Inspected desktop and mobile screenshots of the formatted text and inline diagrams. Wide tables and enlarged diagrams scroll inside their panels; neither causes document-level horizontal overflow.</li>
 <li>Gallery chapter links open HTML. Explicit source links still open Markdown, Mermaid or local code files. Source-code line numbers remain in link tooltips; browsers do not jump to those lines.</li>
 </ul>
-<p>Rendering uses marked 4.3.0 locally and reuses the verified SVGs. The browser needs no Markdown parser, Mermaid package, web server or internet connection. No technical chapter text, SVG content or presentation files changed for this formatting update.</p>
+<p>Rendering uses marked 4.3.0 locally and reuses the verified SVGs. The browser needs no Markdown parser, Mermaid package, web server or internet connection. The Arrow addendum adds three chapters and seven diagrams, updates the index/source ledger and keeps the earlier TPC-H evidence intact. Existing technical chapter sources 01-08 and 10-12 and presentation files were not edited for the Arrow addendum; generated HTML navigation was refreshed.</p>
+<h2 id="arrow-and-hardware-evidence-limits">Arrow and hardware evidence limits</h2>
+<p>Arrow 60.0.0 reference-source inspection is distinguished from Comet&#39;s resolved Arrow/Parquet 59.3.0 dependency. Relevant cached 59.3.0 kernels and the pinned Iceberg Rust reader/writer were inspected. Source links require the recorded repositories and, for dependency internals, local Cargo caches.</p>
+<p>No Arrow/native engine test suite, assembly inspection, hardware-counter collection or scan/rewrite performance run was executed. Examples and hardware cost models explain mechanisms; they do not establish SIMD attribution for the saved TPC-H gains. Source-inspected tests describe intended correctness coverage, not new passing test results.</p>
+<h2 id="benchmark-evidence-limits">Benchmark evidence limits</h2>
+<p>The historical SF1 table was transcribed from the existing presentation. Its displayed rows sum to 29.33 s Spark and 14.59 s Comet; the deck separately reports 14.56 s Comet. The notes retain both rather than treating rounded values as raw samples. Only two Q6 physical plans and the two chart images were recovered, not the complete result JSONs, event logs or all-query plans. Historical hash equality is reported by the deck, not independently revalidated here. No engine benchmark or performance profile was run for this update.</p>
 <p>See the renderer instructions for reproducible commands. Source references are tied to local checkouts and line numbers; rerun the validator after moving the notebook or updating those checkouts.</p>
-</article><nav class="pager" aria-label="Chapter pagination"><a href="10-datafusion-and-connector.html"><small>Previous</small>DataFusion and connector</a><a href="scripts/README.html"><small>Next</small>Rendering guide</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><small>Previous</small>Arrow scans and rewrites</a><a href="scripts/README.html"><small>Next</small>Rendering guide</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

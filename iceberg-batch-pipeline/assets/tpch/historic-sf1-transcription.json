@@ -1,0 +1,140 @@
+{
+  "kind": "transcribed_presentation_values_not_raw_benchmark_results",
+  "source": {
+    "path": "/Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html",
+    "section": "Historic local SF1 run behind the comparison chart",
+    "talk_revision": "5503f3c9be4f0617c26fe88df8680a2057487d68",
+    "upstream_presentation": "https://shekharrajak.github.io/IcebergSummit2026/"
+  },
+  "conditions_reported_by_deck": {
+    "scale_factor": 1,
+    "queries": 22,
+    "measured_iterations": 1,
+    "spark_version": "3.5.8",
+    "platform": "macOS Apple Silicon",
+    "execution_mode": "local"
+  },
+  "limitations": [
+    "Values are rounded to two decimal places in the presentation.",
+    "Original full-suite result JSON, hashes, event logs and exact historical Comet revision were not recovered.",
+    "The deck reports Comet total 14.56 seconds; these rounded rows sum to 14.59 seconds.",
+    "Preserved Q6 plans are separate validation artifacts, not proven to come from this timed invocation."
+  ],
+  "reported_summary": {
+    "spark_seconds": 29.33,
+    "comet_seconds": 14.56,
+    "geometric_mean_speedup": 2.19
+  },
+  "queries": [
+    {
+      "query": 1,
+      "spark_seconds": 4.65,
+      "comet_seconds": 3.17
+    },
+    {
+      "query": 2,
+      "spark_seconds": 0.85,
+      "comet_seconds": 0.69
+    },
+    {
+      "query": 3,
+      "spark_seconds": 1.23,
+      "comet_seconds": 0.45
+    },
+    {
+      "query": 4,
+      "spark_seconds": 1.2,
+      "comet_seconds": 0.58
+    },
+    {
+      "query": 5,
+      "spark_seconds": 1.5,
+      "comet_seconds": 0.55
+    },
+    {
+      "query": 6,
+      "spark_seconds": 0.31,
+      "comet_seconds": 0.09
+    },
+    {
+      "query": 7,
+      "spark_seconds": 1.53,
+      "comet_seconds": 0.78
+    },
+    {
+      "query": 8,
+      "spark_seconds": 1.05,
+      "comet_seconds": 0.49
+    },
+    {
+      "query": 9,
+      "spark_seconds": 2.58,
+      "comet_seconds": 1.13
+    },
+    {
+      "query": 10,
+      "spark_seconds": 1.52,
+      "comet_seconds": 0.82
+    },
+    {
+      "query": 11,
+      "spark_seconds": 0.56,
+      "comet_seconds": 0.27
+    },
+    {
+      "query": 12,
+      "spark_seconds": 0.81,
+      "comet_seconds": 0.36
+    },
+    {
+      "query": 13,
+      "spark_seconds": 0.99,
+      "comet_seconds": 0.3
+    },
+    {
+      "query": 14,
+      "spark_seconds": 0.34,
+      "comet_seconds": 0.23
+    },
+    {
+      "query": 15,
+      "spark_seconds": 1.46,
+      "comet_seconds": 0.4
+    },
+    {
+      "query": 16,
+      "spark_seconds": 0.72,
+      "comet_seconds": 0.68
+    },
+    {
+      "query": 17,
+      "spark_seconds": 1.46,
+      "comet_seconds": 0.41
+    },
+    {
+      "query": 18,
+      "spark_seconds": 2.35,
+      "comet_seconds": 0.86
+    },
+    {
+      "query": 19,
+      "spark_seconds": 0.41,
+      "comet_seconds": 0.17
+    },
+    {
+      "query": 20,
+      "spark_seconds": 0.83,
+      "comet_seconds": 0.45
+    },
+    {
+      "query": 21,
+      "spark_seconds": 2.41,
+      "comet_seconds": 1.51
+    },
+    {
+      "query": 22,
+      "spark_seconds": 0.57,
+      "comet_seconds": 0.2
+    }
+  ]
+}

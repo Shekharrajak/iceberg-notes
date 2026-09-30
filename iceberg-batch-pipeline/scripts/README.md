@@ -40,6 +40,22 @@ The validator checks chapter links/anchors, local source paths and line numbers,
 
 Use `--notes-parent /absolute/path/to/talk/notes` only when validating a staging copy whose link to the preserved older notebook lives in the final talk repository.
 
+Check the TPC-H transcription and its documented arithmetic separately:
+
+```bash
+node scripts/verify-tpch-evidence.mjs
+```
+
+This verifies all 22 timing rows, ratios, totals, 61 documented columns, the query-map count and saved Q6 operator names. It does not rerun queries or validate historical correctness claims.
+
+Check the Arrow/hardware teaching examples separately:
+
+```bash
+node scripts/verify-arrow-examples.mjs
+```
+
+This checks the documented validity/selection bitmaps, string offsets, batch-memory examples, bandwidth floor and serial-fraction arithmetic. It does not execute Arrow kernels or measure hardware performance.
+
 ## Check the offline gallery
 
 ```bash

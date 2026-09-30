@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vectorization SIMD and hardware costs in batch execution | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html" aria-current="page"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="14-vectorization-and-hardware.md">Markdown source</a></header><article><h1 id="vectorization-simd-and-hardware-costs-in-batch-execution">Vectorization SIMD and hardware costs in batch execution</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#five-different-forms-of-parallel-work">Five different forms of parallel work</a></li>
+<li><a href="#what-a-simd-lane-actually-means">What a SIMD lane actually means</a></li>
+<li><a href="#from-a-predicate-to-selected-rows">From a predicate to selected rows</a></li>
+<li><a href="#actual-vectorization-mechanisms-in-arrow-rust">Actual vectorization mechanisms in Arrow Rust</a></li>
+<li><a href="#compiler-target-and-binary-portability">Compiler target and binary portability</a></li>
+<li><a href="#the-memory-hierarchy">The memory hierarchy</a></li>
+<li><a href="#a-simple-bandwidth-and-compute-model">A simple bandwidth and compute model</a></li>
+<li><a href="#batch-size-and-concurrency-are-coupled">Batch size and concurrency are coupled</a></li>
+<li><a href="#what-to-measure-before-claiming-an-improvement">What to measure before claiming an improvement</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="13-arrow-memory-and-kernels.html">Arrow memory</a> | <a href="15-arrow-in-iceberg-scan-and-rewrite.html">Iceberg scan and rewrite</a></p>
+<p>A columnar layout gives the CPU regular data to work on. It does not remove storage latency, memory traffic, branches, dependencies or correctness requirements. This chapter separates the mechanisms that are often compressed into the word vectorization, identifies examples in Arrow Rust, and gives a model for deciding which optimization could matter in an Iceberg pipeline.</p>
+<h2 id="five-different-forms-of-parallel-work">Five different forms of parallel work</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Mechanism</th>
+<th>Unit of work</th>
+<th>Concrete meaning</th>
+<th>Not equivalent to</th>
+</tr>
+</thead><tbody><tr>
+<td>Batch execution</td>
+<td>Hundreds or thousands of logical rows</td>
+<td>One operator call processes an Arrow array or batch</td>
+<td>A particular CPU instruction</td>
+</tr>
+<tr>
+<td>Packed bitmap processing</td>
+<td>Bits in a machine word</td>
+<td>One AND can combine many validity or predicate bits</td>
+<td>SIMD over the original numeric values</td>
+</tr>
+<tr>
+<td>Instruction-level parallelism</td>
+<td>Independent instructions in one thread</td>
+<td>Several accumulators or independent loads overlap</td>
+<td>Multiple OS threads</td>
+</tr>
+<tr>
+<td>CPU SIMD</td>
+<td>Lanes inside vector registers</td>
+<td>One instruction applies an operation to several packed elements</td>
+<td>Guaranteed end-to-end speedup equal to lane count</td>
+</tr>
+<tr>
+<td>Thread and distributed parallelism</td>
+<td>Files, tasks, partitions, executors</td>
+<td>Independent work runs concurrently</td>
+<td>More memory bandwidth without limit</td>
+</tr>
+</tbody></table></div>
+<p>An Arrow-based operator can benefit from the first three without issuing a wide SIMD instruction. It can also use SIMD on one hot loop and scalar code on another. Spark whole-stage code generation is another optimization dimension: generated JVM code can avoid interpretation overhead, and the JIT may optimize its loops. Native execution is not a comparison with an inherently unoptimized baseline.</p>
+<h2 id="what-a-simd-lane-actually-means">What a SIMD lane actually means</h2>
+<p>A 256-bit register can hold eight 32-bit values or four 64-bit values. A 128-bit register can hold four 32-bit values or two 64-bit values. These are capacity calculations, not throughput promises. The relevant instruction must exist for that element type, and loads, masks, shuffles, dependencies and tails still cost work.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Instruction family</th>
+<th>Illustrative vector width</th>
+<th>Scope caveat</th>
+</tr>
+</thead><tbody><tr>
+<td>x86 SSE-family vectors</td>
+<td>128 bits</td>
+<td>Instruction subsets differ by CPU</td>
+</tr>
+<tr>
+<td>x86 AVX/AVX2 vectors</td>
+<td>Up to 256 bits</td>
+<td>AVX and AVX2 do not provide identical integer/floating-point operations</td>
+</tr>
+<tr>
+<td>x86 AVX-512 family</td>
+<td>Up to 512 bits</td>
+<td>Multiple feature subsets; not present on every x86 server</td>
+</tr>
+<tr>
+<td>Arm Advanced SIMD / Neon</td>
+<td>128 bits</td>
+<td>Distinct ISA from x86, with different instructions and costs</td>
+</tr>
+<tr>
+<td>Arm SVE/SVE2</td>
+<td>Scalable vector length</td>
+<td>Requires suitable hardware and generated code; do not infer it from an aarch64 build</td>
+</tr>
+</tbody></table></div>
+<p>Primary references: <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html">Intel architecture optimization manuals</a>, <a href="https://developer.arm.com/community/arm-community-blogs/b/architectures-and-processors-blog/posts/matrix-matrix-multiplication-neon-sve-and-sme-compared">Arm Neon and SVE comparison</a>.</p>
+<p>For Q6-style Decimal128 expressions, 128 describes the integer storage width of <strong>one value</strong>, not an assertion that a 128-bit vector instruction implements its multiply, rescale and overflow behavior. Wider integers, strings, hash probes and nested structures can require several instructions, irregular accesses or branches. Preserve precision, null, overflow and Spark compatibility semantics before considering a faster implementation.</p>
+<h2 id="from-a-predicate-to-selected-rows">From a predicate to selected rows</h2>
+<p>Illustrative input, with rows numbered from zero:</p>
+<pre><code>values = [10, 20, null, 40, 5, 60, 7, 80]
+validity in row order = [1, 1, 0, 1, 1, 1, 1, 1]
+predicate: value &gt; 25
+keep in row order = [0, 0, 0, 1, 0, 1, 0, 1]
+packed keep byte = 0b10101000
+selected indices = [3, 5, 7] -&gt; selected values = [40, 60, 80]</code></pre>
+<p>The numeric comparison can potentially use SIMD. Combining validity with predicate bits is bitmap work. Compacting selected values is a separate memory operation and may use scalar copying, contiguous slice copying or target-specific instructions. Calling the entire chain one SIMD operation hides these distinctions.</p>
+<figure class="diagram" id="diagram-14-from-a-predicate-to-selected-rows"><figcaption><span>From a predicate to selected rows</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-14-from-a-predicate-to-selected-rows" hidden>Actual size</button><a href="diagrams/14-from-a-predicate-to-selected-rows.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/14-from-a-predicate-to-selected-rows.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-14-from-a-predicate-to-selected-rows" tabindex="0" role="region" aria-label="From a predicate to selected rows"><img src="diagrams/14-from-a-predicate-to-selected-rows.svg" width="1676" height="316" alt="From a predicate to selected rows"></div></figure>
+<p>This is a teaching decomposition of comparison plus filtering, not a claim that every DataFusion expression uses precisely this sequence. An empty selection also returns an empty array. The actual filter dispatch is in <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 582; opens the local source file" class="source-link">arrow-select</a>.</p>
+<h2 id="actual-vectorization-mechanisms-in-arrow-rust">Actual vectorization mechanisms in Arrow Rust</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Source path</th>
+<th>What the checked implementation does</th>
+<th>Classification and limitation</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/arity.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/arity.rs, line 109; opens the local source file" class="source-link">Arithmetic binary kernel</a></td>
+<td>Iterates paired typed buffers and collects output, handling validity separately</td>
+<td>Compiler-friendly regular loop; not an explicit AVX intrinsic</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-ord/src/cmp.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-ord/src/cmp.rs, line 589; opens the local source file" class="source-link">Comparison bitmap builder</a></td>
+<td>Packs Boolean comparison results into 64-bit words and handles a remainder</td>
+<td>Packed output plus compiler optimization opportunity; 64 bits do not mean 64 SIMD lanes</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/aggregate.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/aggregate.rs, line 234; opens the local source file" class="source-link">Primitive aggregation</a></td>
+<td>Uses independent accumulators for selected paths, then reduces them</td>
+<td>Exposes parallel arithmetic and reduces one long dependency chain</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs, line 18; opens the local source file" class="source-link">Parquet bit unpacking</a></td>
+<td>Generates constant-bit-width unpack routines with shifts and masks</td>
+<td>Specialized unrolled code suited to optimization; source does not select an AVX2 intrinsic here</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/util/bit_util.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/util/bit_util.rs, line 57; opens the local source file" class="source-link">Bitmap compress and expand</a></td>
+<td>Uses x86 BMI2 PEXT/PDEP when enabled at compile time, scalar fallback otherwise</td>
+<td>Explicit hardware instructions, but scalar bit-manipulation instructions rather than lane SIMD</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/Cargo.toml, line 100; opens the local source file" class="source-link">Parquet UTF-8 feature</a></td>
+<td>Declares optional <code>simdutf8</code>, included in this crate&#39;s default features</td>
+<td>Dependency/feature evidence only; another consumer can disable defaults</td>
+</tr>
+</tbody></table></div>
+<p>The BMI2 <code>compress</code>/<code>expand</code> helpers are present in the local <strong>60.0.0</strong> checkout but absent from the inspected <strong>59.3.0</strong> cached <code>bit_util.rs</code>. Do not attribute their benefit to the checked Comet dependency or old TPC-H run. In contrast, 59.3.0 also contains the aggregation lane structure, 0.8 filter heuristic and string-view filter path. <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-arith-59.3.0/src/aggregate.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-arith-59.3.0/src/aggregate.rs, line 303; opens the local source file" class="source-link">Resolved-version aggregation</a>, <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-select-59.3.0/src/filter.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-select-59.3.0/src/filter.rs, line 915; opens the local source file" class="source-link">resolved-version filter</a>.</p>
+<h3 id="aggregation-and-dependency-chains">Aggregation and dependency chains</h3>
+<p>One accumulator creates a recurrence: each addition depends on the previous sum. Several accumulators let independent chunks progress before a final reduction. Arrow&#39;s nullable path processes validity in 64-bit chunks and handles the tail separately. Its preferred accumulator sizing consults compile-time target features; non-null integer aggregation deliberately leaves loop vectorization to LLVM rather than forcing the same chunk structure.</p>
+<p>Floating-point reassociation can change rounding. Source paths, chosen aggregate implementation and required semantics all matter. Seeing <code>aggregate_nonnull_lanes</code> in Arrow does not prove that Comet&#39;s Decimal128 Q6 aggregate invoked that function; DataFusion and Spark-compatible aggregates can have their own state and arithmetic. The source comment about AVX-512 stability is not used here as a statement about today&#39;s Rust compiler support.</p>
+<h3 id="bit-unpacking-and-encoding">Bit unpacking and encoding</h3>
+<p>Suppose dictionary identifiers fit in five bits. Their encoded stream is smaller than an array of 32-bit identifiers, but reading it requires extracting fields that may cross machine-word boundaries. Constant bit width makes masks and shifts known to the compiler; generated routines avoid a general variable-width branch for each output value. <code>unpack32</code> emits blocks of 32 integers, not a claim about one 32-lane instruction. RLE can represent a repeated identifier even more compactly. Decompression, unpacking and dictionary lookup are distinct stages.</p>
+<p>The inspected <code>test_pack_round_trip</code> exercises multiple bit widths. It establishes a correctness test for the encoding path, not a throughput measurement. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs, line 283; opens the local source file" class="source-link">Bit-pack tests</a>.</p>
+<h2 id="compiler-target-and-binary-portability">Compiler target and binary portability</h2>
+<p>LLVM has loop and straight-line SLP vectorizers. Legal and profitable vectorization depends on dependencies, control flow, memory access, available instructions and the cost model. Source that looks vectorizable can still compile to scalar instructions, or use different widths for different targets. <a href="https://llvm.org/docs/Vectorizers.html">LLVM vectorizer documentation</a>.</p>
+<p>Rust&#39;s <code>target-cpu</code> and <code>target-feature</code> select code-generation capabilities. <code>native</code> specializes for the build host; it does not make the output portable to every executor. Compile-time <code>cfg(target_feature)</code> is different from runtime CPU detection and dispatch. A binary built for unavailable instructions may fail instead of gracefully selecting a slower path. <a href="https://doc.rust-lang.org/rustc/codegen-options/index.html#target-cpu">Rust code-generation options</a>.</p>
+<p>Comet&#39;s <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/Makefile" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/Makefile, line 57; opens the local source file" class="source-link">Makefile</a> contains target-specific build recipes, including <code>x86-64-v3</code>, <code>neoverse-n1</code>, <code>apple-m1</code> and local <code>native</code> builds. The release profile also enables thin LTO and one codegen unit. These affect the generated program; they do not record the flags used for the historical benchmark. Inspect the packaged binary and build log before asserting a SIMD ISA was active.</p>
+<p>To prove a SIMD claim, locate the hot kernel, identify its concrete types and build flags, inspect its generated assembly, and profile whether that code is actually hot. Finding vector instructions somewhere in a library is not enough.</p>
+<h2 id="the-memory-hierarchy">The memory hierarchy</h2>
+<figure class="diagram" id="diagram-14-the-memory-hierarchy"><figcaption><span>The memory hierarchy</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-14-the-memory-hierarchy" hidden>Actual size</button><a href="diagrams/14-the-memory-hierarchy.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/14-the-memory-hierarchy.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-14-the-memory-hierarchy" tabindex="0" role="region" aria-label="The memory hierarchy"><img src="diagrams/14-the-memory-hierarchy.svg" width="1690" height="292" alt="The memory hierarchy"></div></figure>
+<p>This is a cost model, not a literal universal cache topology. Networks, kernel/user buffers, DMA and multiple cache levels are compressed. A cache hit can satisfy a load without reaching DRAM; a store can create traffic beyond the bytes explicitly written by the program.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Hardware concept</th>
+<th>Why it matters for Arrow and Iceberg</th>
+<th>What to inspect</th>
+</tr>
+</thead><tbody><tr>
+<td>Spatial locality</td>
+<td>Sequential column values use nearby bytes; following dictionary keys or hash buckets is less regular</td>
+<td>Cache misses, access patterns, selected columns</td>
+</tr>
+<tr>
+<td>Temporal locality</td>
+<td>Reusing a decoded column or small dictionary can avoid rereads</td>
+<td>Repeated passes, predicate cache, retained batches</td>
+</tr>
+<tr>
+<td>Cache lines and prefetching</td>
+<td>Hardware moves blocks, not individual SQL values; predictable streams are easier to prefetch</td>
+<td>Useful bytes per fetched line and wasted projection width</td>
+</tr>
+<tr>
+<td>Memory bandwidth</td>
+<td>Several full-column passes can saturate memory channels</td>
+<td>Bytes moved, scaling as more cores are added</td>
+</tr>
+<tr>
+<td>Memory latency</td>
+<td>Dependent random lookups cannot always hide the wait with more lanes</td>
+<td>Hash probe chains, gather-heavy kernels, stalls</td>
+</tr>
+<tr>
+<td>Branch prediction</td>
+<td>Predictable runs and unpredictable per-row outcomes behave differently</td>
+<td>Branch misses and selectivity distribution, not only percentage</td>
+</tr>
+<tr>
+<td>Register pressure</td>
+<td>Too many live values can force spills to the stack</td>
+<td>Assembly and profiles, expression width, unrolling</td>
+</tr>
+<tr>
+<td>Instruction cache</td>
+<td>Larger specialized/generated code can hurt locality</td>
+<td>Hot code size and instruction-side stalls</td>
+</tr>
+</tbody></table></div>
+<p>These are diagnostic hypotheses, not observations from our TPC-H run. A low CPU utilization percentage does not by itself distinguish network wait, memory stalls, insufficient parallelism or driver work.</p>
+<h3 id="tlbs-and-page-size">TLBs and page size</h3>
+<p>The translation lookaside buffer caches virtual-to-physical address translations. Large arrays touch many pages; random access can stress both data caches and translation caches. Huge pages can reduce translation pressure, but allocation behavior, fragmentation and compaction introduce tradeoffs. A Parquet <strong>data page</strong> is not an OS <strong>memory page</strong>. No host huge-page setting was changed or recommended as a default here. <a href="https://cdn.kernel.org/doc/html/latest/admin-guide/mm/hugetlbpage.html">Linux huge-page concepts</a>, <a href="https://docs.kernel.org/admin-guide/mm/transhuge.html">transparent huge-page behavior</a>.</p>
+<h3 id="numa-and-shared-counters">NUMA and shared counters</h3>
+<p>On a NUMA system, CPU placement and memory placement can make the same array local or remote to a worker. More threads across sockets can increase available bandwidth, but cross-node accesses and movement can also hurt. Linux memory policy controls allocation placement; CPU affinity and memory policy are related but separate. Do not transfer a multi-socket server tuning claim to the historical local Apple Silicon run. <a href="https://www.kernel.org/doc/html/latest/admin-guide/mm/numa_memory_policy.html">Linux NUMA memory policy</a>.</p>
+<p>False sharing occurs when independent writers contend on the same cache line. Shared counters, reference counts or adjacent per-thread state can introduce coherence traffic even when the logical data is not shared. Immutable Arrow payloads help avoid concurrent mutation, but do not eliminate synchronization or allocator overhead. <a href="https://www.kernel.org/doc/html/latest/kernel-hacking/false-sharing.html">Linux false-sharing guide</a>.</p>
+<h3 id="core-count-frequency-and-thermal-limits">Core count frequency and thermal limits</h3>
+<p>Logical CPU count is not a count of independent memory channels or full physical cores. SMT can help hide stalls for some workloads and compete for execution resources for others. Sustained load, power policy and temperature can change frequency; a wider-vector build or more active cores need not preserve the same clock behavior. Record machine and power conditions when comparing runs. <a href="https://www.kernel.org/doc/html/latest/admin-guide/pm/cpufreq.html">CPU performance scaling</a>.</p>
+<h2 id="a-simple-bandwidth-and-compute-model">A simple bandwidth and compute model</h2>
+<p>The Roofline idea compares computational capacity with data movement. For a suitable kernel, attainable throughput is bounded by compute throughput and memory bandwidth times work per byte. Database operations mix integer, decimal, comparison and branch work, so FLOP/s is often the wrong universal unit. Use the model to ask where the limit lies, not to assign a synthetic FLOP count to every query. <a href="https://amcr.lbl.gov/departments/computer-science-department/ppan/roofline-performance-model/">Berkeley Lab Roofline explanation</a>.</p>
+<p>Illustrative <code>c = a + b</code> over two Int64 input arrays and one Int64 output:</p>
+<pre><code>minimum logical payload traffic = 8 + 8 + 8 = 24 bytes per row
+10 million rows -&gt; 240 million bytes
+assumed sustained bandwidth = 40 billion bytes per second
+idealized payload-only floor = 240000000 / 40000000000 = 0.006 seconds</code></pre>
+<p>Six milliseconds is not a prediction for a query or this machine. Validity, allocation, write-allocate traffic, cache state, decoding and other operators are omitted. If this loop is bandwidth-bound, doubling arithmetic lane width cannot halve total time. Removing an unnecessary materialization or whole pass can matter more.</p>
+<p>Likewise, if a faster kernel improves only 30% of runtime by 2x, the idealized overall gain is <code>1 / (0.70 + 0.30 / 2) = 1.176x</code>, not 2x. This is a hypothetical serial-fraction calculation, not an attribution of the saved benchmark. Real task phases can overlap.</p>
+<h2 id="batch-size-and-concurrency-are-coupled">Batch size and concurrency are coupled</h2>
+<p>Small batches repeat iterator, dispatch, JNI, allocation and scheduling overhead. Larger batches amortize overhead but increase the working set, delay first output and can retain more memory. There is no universal batch size that equals the CPU cache size: multiple columns, input/output arrays and operator state coexist, and caches are shared.</p>
+<pre><code>approximate live scan memory = active tasks * in-flight files per task * per-file working set
+                            + operator state + queued batches + writer state</code></pre>
+<p>This is an accounting model, not an exact allocator formula. Spark task parallelism, Iceberg file concurrency and range-fetch concurrency are distinct knobs. Increasing all three can multiply in-flight memory and object-store requests until the bottleneck shifts to bandwidth, throttling or memory pressure.</p>
+<h2 id="what-to-measure-before-claiming-an-improvement">What to measure before claiming an improvement</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Hypothesis</th>
+<th>Needed evidence</th>
+<th>Common mistake</th>
+</tr>
+</thead><tbody><tr>
+<td>SIMD reduced compute cost</td>
+<td>Concrete hot-loop assembly plus CPU profile and repeated controlled timings</td>
+<td>Naming AVX/Neon because the CPU supports it</td>
+</tr>
+<tr>
+<td>Columnar execution reduced conversion</td>
+<td>Actual plan boundaries, allocation profile, converted row counts</td>
+<td>Equating Arrow with zero allocations</td>
+</tr>
+<tr>
+<td>Pruning saved I/O</td>
+<td>Selected files/row groups/pages and physical bytes/requests</td>
+<td>Using returned row count as bytes read</td>
+</tr>
+<tr>
+<td>More concurrency helped</td>
+<td>Throughput, wait time, request counts, RSS and saturation curve</td>
+<td>Measuring only one concurrency setting</td>
+</tr>
+<tr>
+<td>Compaction helps future scans</td>
+<td>Before/after file layout plus representative read workload</td>
+<td>Assuming fewer files always means better pruning</td>
+</tr>
+<tr>
+<td>Native write is cheaper</td>
+<td>Encode/compress CPU, output bytes, writer memory and commit time</td>
+<td>Treating the entire rewrite as one encoding kernel</td>
+</tr>
+</tbody></table></div>
+<p>Start with Spark SQL metrics/event logs and native profiles from the actual executor process. Hardware counters can help distinguish instruction, branch, cache and memory effects, but counter names, availability and sampling permissions vary by OS and CPU. No hardware counters were collected for the historical SF1 comparison, so none of these mechanisms is assigned a measured percentage of its gain.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="13-arrow-memory-and-kernels.html"><small>Previous</small>Arrow memory and kernels</a><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><small>Next</small>Arrow scans and rewrites</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

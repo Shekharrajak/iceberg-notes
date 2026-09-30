@@ -45,7 +45,7 @@ for (const chapter of chapters) {
       title,
       id: `${chapter.slice(0, 2)}-${slug(title)}`,
       source: `${match[1].trim()}\n`,
-      type: match[1].includes('sequenceDiagram') ? 'sequence' : 'flowchart'
+      type: match[1].includes('sequenceDiagram') ? 'sequence' : match[1].includes('erDiagram') ? 'ER' : 'flowchart'
     });
   }
 }

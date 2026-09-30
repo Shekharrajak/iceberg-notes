@@ -1,0 +1,32 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph GENERATE["Data generation"]
+    G["dbgen with scale factor"]
+    T["Spark casts generated fields"]
+    P[("Source Parquet tables")]
+    G --> T --> P
+  end
+  subgraph LOAD["Iceberg preparation"]
+    C["Read source schema and CTAS"]
+    I[("Iceberg data files and metadata")]
+    D{"Add MOR deletes?"}
+    M[("New snapshot with delete files")]
+    P --> C --> I --> D
+    D -- "yes" --> M
+  end
+  subgraph READ["Benchmark"]
+    S["Spark Iceberg baseline"]
+    N["Comet Iceberg execution"]
+    D -- "no: pin base snapshot" --> S
+    D -- "no: same snapshot" --> N
+    M --> S
+    M --> N
+  end
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef storage fill:#f1f5f9,stroke:#64748b,color:#334155
+  class G,T,C,S spark
+  class N native
+  class D metadata
+  class P,I,M storage

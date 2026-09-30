@@ -7,7 +7,7 @@
       "title": "Iceberg batch pipeline source notebook",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "852df5d5da59dc4ac12deba549ff68307fcda857e30e8800d624467e177ef77d"
+      "sha256": "5d70341c3473b1d16945735333057da51f8adc6258d937eca6f751a7675c3bc0"
     },
     {
       "source": "01-system-architecture.md",
@@ -77,9 +77,9 @@
       "source": "09-source-ledger.md",
       "html": "09-source-ledger.html",
       "title": "Source revisions evidence and validation limits",
-      "headings": 16,
+      "headings": 17,
       "diagrams": 0,
-      "sha256": "fb0f75213f320c315e934d0cf4554a2a0379c3587aa735d52717a1295c2a7c53"
+      "sha256": "c8f71bfb78b8af18ac078c3c2255bdda1992a06bf7eff61f57b8c7d079c39166"
     },
     {
       "source": "10-datafusion-and-connector.md",
@@ -90,12 +90,52 @@
       "sha256": "826618659ff620e693bc734dce10c37d02708adb99d620d67e1562ff5520e6af"
     },
     {
+      "source": "11-tpch-dataset-and-schema.md",
+      "html": "11-tpch-dataset-and-schema.html",
+      "title": "TPC-H dataset schema and query workload",
+      "headings": 17,
+      "diagrams": 2,
+      "sha256": "79f4c5d29eccdfd3a68653bf403c5e4e985037d6b7d2b63956b66e60743d321c"
+    },
+    {
+      "source": "12-tpch-spark-versus-comet.md",
+      "html": "12-tpch-spark-versus-comet.html",
+      "title": "TPC-H Spark versus Comet benchmark findings",
+      "headings": 15,
+      "diagrams": 2,
+      "sha256": "8cc461befcf4b5205a8e195eeb6c08c188a9a7e2ee5c5a4887db0cef9ace3634"
+    },
+    {
+      "source": "13-arrow-memory-and-kernels.md",
+      "html": "13-arrow-memory-and-kernels.html",
+      "title": "Apache Arrow memory layout and execution kernels",
+      "headings": 13,
+      "diagrams": 2,
+      "sha256": "d8dda551e57efe9f3412ea50667cb92bcffb1988f602c6e5ebfc12ed720af48f"
+    },
+    {
+      "source": "14-vectorization-and-hardware.md",
+      "html": "14-vectorization-and-hardware.html",
+      "title": "Vectorization SIMD and hardware costs in batch execution",
+      "headings": 15,
+      "diagrams": 2,
+      "sha256": "72456b067e08c45121aaaa1acf3a328e66f05a1fb30be808bb095cbe0f07b5b4"
+    },
+    {
+      "source": "15-arrow-in-iceberg-scan-and-rewrite.md",
+      "html": "15-arrow-in-iceberg-scan-and-rewrite.html",
+      "title": "Arrow in Iceberg scans writes and data file rewrites",
+      "headings": 16,
+      "diagrams": 3,
+      "sha256": "4e62b33a632a1dea86e52d2adb289e9e5006f1ade65a6dde2d111848afb7d00b"
+    },
+    {
       "source": "VALIDATION.md",
       "html": "VALIDATION.html",
       "title": "Documentation validation",
-      "headings": 2,
+      "headings": 4,
       "diagrams": 0,
-      "sha256": "f7bef46307d958338182a1dbe0adbf6b1d600b45db6a67ff424b8ca2c9f579da"
+      "sha256": "7a5a2594ae75b0aa5df818b690f3bebd811a1772f5014128e481a13af10d9512"
     },
     {
       "source": "scripts/README.md",
@@ -103,7 +143,7 @@
       "title": "Diagram rendering and validation",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "08c711132d431be2aae7a8db66a0b1ac5643f053a0c4c28995d3392a76fcb5e6"
+      "sha256": "686d75a7908a712e95225c287ed1705dd9aa10bde25c580629a09d2cc197db14"
     }
   ]
 }

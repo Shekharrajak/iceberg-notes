@@ -1,0 +1,31 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":45},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph INPUT["Column buffers"]
+    V[("Numeric values")]
+    N[("Validity bits")]
+  end
+  subgraph COMPUTE["Expression and selection"]
+    C["Compare values in a regular loop"]
+    M["Combine predicate and validity"]
+    Q{"Selection shape"}
+    A["All: share a slice"]
+    R["Runs: copy selected ranges"]
+    I["Sparse: gather selected indices"]
+    V --> C --> M --> Q
+    N --> M
+    Q -- "all" --> A
+    Q -- "contiguous runs" --> R
+    Q -- "scattered" --> I
+  end
+  subgraph OUTPUT["Next operator"]
+    B["Selected Arrow batch"]
+    A --> B
+    R --> B
+    I --> B
+  end
+  classDef input fill:#f1f5f9,stroke:#64748b,color:#334155
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef output fill:#dcfce7,stroke:#16a34a,color:#14532d
+  class V,N input
+  class C,M,Q,A,R,I compute
+  class B output

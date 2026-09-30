@@ -1,0 +1,35 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph API["Operator-facing objects"]
+    B["RecordBatch: schema and row count"]
+    P["PrimitiveArray"]
+    S["StringArray"]
+    B --> P
+    B --> S
+  end
+  subgraph BUFFERS["Arrow buffers"]
+    V["Typed values buffer"]
+    PN["Primitive validity bitmap"]
+    SN["String validity bitmap"]
+    O["String offsets"]
+    D["UTF-8 payload bytes"]
+    P --> V
+    P --> PN
+    S --> O
+    S --> D
+    S --> SN
+  end
+  A[("Reference-counted allocations")]
+  X["Slice: new view of existing allocation"]
+  V --> A
+  PN --> A
+  SN --> A
+  O --> A
+  D --> A
+  X --> A
+  classDef api fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef buffer fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef memory fill:#f1f5f9,stroke:#64748b,color:#334155
+  class B,P,S api
+  class V,PN,SN,O,D buffer
+  class A,X memory

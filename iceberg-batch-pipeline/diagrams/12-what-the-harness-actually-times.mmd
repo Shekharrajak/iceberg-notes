@@ -1,0 +1,32 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph SETUP["Before per-query timer"]
+    S["Create Spark session and table views"]
+    Q["Read SQL and classify statements"]
+    S --> Q
+  end
+  subgraph TIMED["Reported collect-path duration"]
+    B(["Start timer"])
+    P["spark.sql and formatted explain"]
+    W{"Plan capture enabled?"}
+    F["Format and write plan file"]
+    C["collect executes query and returns rows"]
+    E(["Compute elapsed time"])
+    B --> P --> W
+    W -- "yes" --> F --> C
+    W -- "no" --> C
+    C --> E
+  end
+  subgraph AFTER["After per-query timer"]
+    H["Count rows and hash sorted row strings"]
+    J["Append duration and later write JSON"]
+    H --> J
+  end
+  Q --> B
+  E --> H
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef io fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class S,Q,B,P,C,E spark
+  class F,J io
+  class W,H metadata

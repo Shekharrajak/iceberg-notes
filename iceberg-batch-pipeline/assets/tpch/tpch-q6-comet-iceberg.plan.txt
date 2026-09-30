@@ -1,0 +1,38 @@
+== Physical Plan ==
+* CometColumnarToRow (7)
++- CometHashAggregate (6)
+   +- CometExchange (5)
+      +- CometHashAggregate (4)
+         +- CometProject (3)
+            +- CometFilter (2)
+               +- CometIcebergNativeScan (1)
+
+
+(1) CometIcebergNativeScan
+Output [4]: [l_extendedprice#1, l_discount#2, l_shipdate#3, l_quantity#4]
+Arguments: [l_extendedprice#1, l_discount#2, l_shipdate#3, l_quantity#4], <warehouse>/tpch/lineitem/metadata/v2.metadata.json, local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_discount IS NOT NULL, l_quantity IS NOT NULL, l_shipdate >= 8766, l_shipdate < 9131, l_discount >= 0.03, l_discount <= 0.05, l_quantity < 24.00, groupedBy=], 12
+
+(2) CometFilter
+Input [4]: [l_extendedprice#1, l_discount#2, l_shipdate#3, l_quantity#4]
+Condition : ((((isnotnull(l_discount#2) AND isnotnull(l_quantity#4)) AND (l_discount#2 >= 0.03)) AND (l_discount#2 <= 0.05)) AND (l_quantity#4 < 24.00))
+
+(3) CometProject
+Input [4]: [l_extendedprice#1, l_discount#2, l_shipdate#3, l_quantity#4]
+Arguments: [l_extendedprice#1, l_discount#2], [l_extendedprice#1, l_discount#2]
+
+(4) CometHashAggregate
+Input [2]: [l_extendedprice#1, l_discount#2]
+Keys: []
+Functions [1]: [partial_sum((l_extendedprice#1 * l_discount#2))]
+
+(5) CometExchange
+Input [2]: [sum#18, isEmpty#19]
+Arguments: SinglePartition, ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=40]
+
+(6) CometHashAggregate
+Input [2]: [sum#18, isEmpty#19]
+Keys: []
+Functions [1]: [sum((l_extendedprice#1 * l_discount#2))]
+
+(7) CometColumnarToRow [codegen id : 1]
+Input [1]: [revenue#0]

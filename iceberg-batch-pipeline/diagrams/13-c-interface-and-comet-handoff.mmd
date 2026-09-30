@@ -1,0 +1,18 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#475569"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) JVM producer
+    participant J as Arrow stream producer
+  end
+  box rgb(237, 233, 254) Comet Rust
+    participant S as ScanExec
+    participant A as AlignedArrowStreamReader
+    participant K as Native operators
+  end
+  S->>A: Request next batch
+  A->>J: Call get_next through C stream
+  J-->>A: Return array descriptors with a release callback
+  A->>A: Import and ensure typed buffer alignment
+  A-->>S: Return RecordBatch
+  S->>S: Decode strings if needed and unpack dictionaries
+  S->>K: Supply native input batch
+  Note over J,K: Referenced data must remain valid until its owners release it

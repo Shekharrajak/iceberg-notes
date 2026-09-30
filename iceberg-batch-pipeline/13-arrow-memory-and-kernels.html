@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apache Arrow memory layout and execution kernels | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html" aria-current="page"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="13-arrow-memory-and-kernels.md">Markdown source</a></header><article><h1 id="apache-arrow-memory-layout-and-execution-kernels">Apache Arrow memory layout and execution kernels</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#findings-to-keep-straight">Findings to keep straight</a></li>
+<li><a href="#versions-and-scope">Versions and scope</a></li>
+<li><a href="#crate-map">Crate map</a></li>
+<li><a href="#batch-and-buffer-ownership">Batch and buffer ownership</a></li>
+<li><a href="#fixed-width-values-and-nulls">Fixed-width values and nulls</a></li>
+<li><a href="#strings-and-string-views">Strings and string views</a></li>
+<li><a href="#nested-arrays-and-encoded-arrays">Nested arrays and encoded arrays</a></li>
+<li><a href="#slice-versus-filter-versus-take">Slice versus filter versus take</a></li>
+<li><a href="#alignment-is-not-one-universal-number">Alignment is not one universal number</a></li>
+<li><a href="#c-interface-and-comet-handoff">C interface and Comet handoff</a></li>
+<li><a href="#memory-accounting-example">Memory accounting example</a></li>
+<li><a href="#tests-and-remaining-evidence">Tests and remaining evidence</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="14-vectorization-and-hardware.html">Vectorization and hardware</a> | <a href="15-arrow-in-iceberg-scan-and-rewrite.html">Scan and rewrite integration</a></p>
+<p>Arrow supplies the in-memory contract that lets a Parquet reader, expression kernel and downstream operator exchange columns without inventing another row representation at each boundary. It is not a query scheduler, an Iceberg catalog or a promise that every operation is zero-copy. This chapter traces the Rust implementation from buffers to batches, then explains where allocation, copying and ownership still matter.</p>
+<h2 id="findings-to-keep-straight">Findings to keep straight</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Source-backed answer</th>
+<th>Consequence for this pipeline</th>
+</tr>
+</thead><tbody><tr>
+<td>Is a batch one contiguous allocation?</td>
+<td>A <code>RecordBatch</code> holds a schema and references to separate arrays</td>
+<td>Locality exists within buffers; the entire batch is not one packed object</td>
+</tr>
+<tr>
+<td>Does Arrow mean SIMD?</td>
+<td>The layout enables regular loops; kernels and the compiler determine instructions</td>
+<td>Batch execution and machine SIMD require separate evidence</td>
+</tr>
+<tr>
+<td>Is slicing zero-copy?</td>
+<td><code>Buffer</code> and <code>ScalarBuffer</code> slices share ownership of their allocation</td>
+<td>A small slice can keep a large allocation alive</td>
+</tr>
+<tr>
+<td>Is filtering zero-copy?</td>
+<td>General primitive filtering copies selected values; string-view filtering can share string payloads</td>
+<td>Masks, offsets, views and payloads have different costs</td>
+</tr>
+<tr>
+<td>Does Parquet equal Arrow on disk?</td>
+<td>Parquet encodes/compresses columns; its reader reconstructs Arrow arrays</td>
+<td>Reading normally performs real decoding and allocation</td>
+</tr>
+<tr>
+<td>Does the C interface remove all conversion?</td>
+<td>It shares an agreed memory representation and release contract</td>
+<td>Alignment repair, dictionary expansion and semantic conversion may still copy</td>
+</tr>
+<tr>
+<td>Does Rust memory appear in JVM heap metrics?</td>
+<td>Native buffers have native ownership</td>
+<td>JVM heap alone is not executor memory consumption</td>
+</tr>
+</tbody></table></div>
+<h2 id="versions-and-scope">Versions and scope</h2>
+<p>The inspected Arrow checkout is <code>149b3ab23dc360e9452b2f854b01d2f5fed06f43</code>, with workspace version <strong>60.0.0</strong>. The Comet checkout is <code>184accac5b9cee6b761a6673c73c263adedef45e</code>; its manifest requests compatible Arrow/Parquet <code>59.2.0</code> releases, while its lockfile resolves <strong>59.3.0</strong>. A Cargo requirement is not necessarily the exact resolved version.</p>
+<p>Source: <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/Cargo.toml, line 68; opens the local source file" class="source-link">Arrow workspace</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml, line 40; opens the local source file" class="source-link">Comet dependencies</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.lock" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.lock, line 228; opens the local source file" class="source-link">resolved Arrow</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.lock" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.lock, line 4877; opens the local source file" class="source-link">resolved Parquet</a>.</p>
+<p>Unless explicitly marked otherwise, Arrow internals below describe that local 60.0.0 source. They do not prove what was linked into the historical TPC-H executable. No Arrow unit suite, assembly inspection or hardware profile was run for these notes. Named tests were inspected as coverage evidence.</p>
+<h2 id="crate-map">Crate map</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Crate or area</th>
+<th>Main responsibility</th>
+<th>Read it when asking</th>
+</tr>
+</thead><tbody><tr>
+<td><code>arrow-schema</code></td>
+<td>Data types, fields, schema, metadata and errors</td>
+<td>What does this column mean?</td>
+</tr>
+<tr>
+<td><code>arrow-buffer</code></td>
+<td>Shared byte buffers, typed buffers, offsets, validity and bit utilities</td>
+<td>Who owns these bytes, and how are nulls represented?</td>
+</tr>
+<tr>
+<td><code>arrow-data</code></td>
+<td>Generic array layout, validation and low-level transformations</td>
+<td>Are these buffers a valid instance of this type?</td>
+</tr>
+<tr>
+<td><code>arrow-array</code></td>
+<td>Typed arrays, builders, <code>ArrayRef</code>, <code>RecordBatch</code>, C interfaces</td>
+<td>How does an operator access or exchange a column?</td>
+</tr>
+<tr>
+<td><code>arrow-arith</code>, <code>arrow-ord</code>, <code>arrow-string</code></td>
+<td>Arithmetic, Boolean logic, aggregation, comparisons, sorting and strings</td>
+<td>Which loop implements an expression?</td>
+</tr>
+<tr>
+<td><code>arrow-select</code></td>
+<td>Filter, take, concatenate, interleave and coalesce</td>
+<td>Which rows survive, and are values copied?</td>
+</tr>
+<tr>
+<td><code>arrow-cast</code></td>
+<td>Type conversion and parsing</td>
+<td>Is this conversion metadata-only, allocating, or fallible?</td>
+</tr>
+<tr>
+<td><code>arrow-row</code></td>
+<td>Row-oriented comparison representation for multiple columns</td>
+<td>Why might a columnar engine temporarily encode rows for sorting/grouping?</td>
+</tr>
+<tr>
+<td><code>arrow-ipc</code></td>
+<td>Arrow stream/file serialization</td>
+<td>How do arrays become transferable bytes?</td>
+</tr>
+<tr>
+<td><code>arrow-flight</code></td>
+<td>Arrow-oriented RPC services</td>
+<td>Is this application using Flight? Its presence does not mean Spark shuffle uses it.</td>
+</tr>
+<tr>
+<td><code>parquet</code></td>
+<td>File metadata, encodings, codecs, page readers and Arrow integration</td>
+<td>How do compressed files become arrays, or arrays become files?</td>
+</tr>
+<tr>
+<td><code>arrow</code></td>
+<td>Convenient public facade and re-exports</td>
+<td>Where does a caller import the functionality?</td>
+</tr>
+</tbody></table></div>
+<p>The workspace includes additional format and utility crates. This map selects the ones that explain the batch pipeline; it is not a dependency graph claiming that every crate participates in every query. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/Cargo.toml, line 20; opens the local source file" class="source-link">Workspace members</a>.</p>
+<h2 id="batch-and-buffer-ownership">Batch and buffer ownership</h2>
+<figure class="diagram" id="diagram-13-batch-and-buffer-ownership"><figcaption><span>Batch and buffer ownership</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-13-batch-and-buffer-ownership" hidden>Actual size</button><a href="diagrams/13-batch-and-buffer-ownership.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/13-batch-and-buffer-ownership.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-13-batch-and-buffer-ownership" tabindex="0" role="region" aria-label="Batch and buffer ownership"><img src="diagrams/13-batch-and-buffer-ownership.svg" width="1016" height="537" alt="Batch and buffer ownership"></div></figure>
+<p>Each nullable array can have its own validity bitmap; all-valid primitive/string arrays can omit it. The allocation node groups ownership, not all bytes into one allocation.</p>
+<p><code>RecordBatch</code> stores <code>Vec&lt;Arc&lt;dyn Array&gt;&gt;</code>, a <code>SchemaRef</code> and a row count. Its checked constructor verifies compatibility of columns and schema. Keeping the row count separately also permits batches with no physical columns through the appropriate constructor/options. <code>PrimitiveArray&lt;T&gt;</code> stores the logical data type, <code>ScalarBuffer&lt;T::Native&gt;</code> and optional <code>NullBuffer</code>. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/record_batch.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/record_batch.rs, line 224; opens the local source file" class="source-link">RecordBatch</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/primitive_array.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/primitive_array.rs, line 607; opens the local source file" class="source-link">PrimitiveArray</a>.</p>
+<p><code>Buffer</code> contains a reference-counted owner, a pointer to the visible start and a byte length. Cloning or slicing the buffer does not duplicate its payload. Mutability requires appropriate ownership; sharing an array is not permission to modify bytes behind another consumer. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/immutable.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/immutable.rs, line 70; opens the local source file" class="source-link">Buffer</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/scalar.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/scalar.rs, line 26; opens the local source file" class="source-link">ScalarBuffer</a>.</p>
+<h2 id="fixed-width-values-and-nulls">Fixed-width values and nulls</h2>
+<p>Illustrative <code>Int32</code> array:</p>
+<pre><code>logical values = [10, null, 30, 40]
+values slots   = [10, arbitrary, 30, 40]
+validity bits in row order = [1, 0, 1, 1]
+validity byte, bit 0 is row 0 = 0b00001101</code></pre>
+<p>A null is not a sentinel integer such as zero. The physical value in its slot does not define the logical value. Absence of a validity buffer normally means all slots are valid for these primitive arrays. Boolean values are themselves bit-packed, so a nullable Boolean array has both a value bitmap and a validity bitmap.</p>
+<p>This separation lets a cheap infallible operation run over regular value buffers and combine validity independently. The checked <code>arity::binary</code> does exactly that: it processes every value slot, creates output values, and combines input null information. Its callback must be safe for <em>all</em> physical input values, including null slots. Division, checked overflow and other fallible operations need their own semantics; blindly evaluating them over garbage null slots is not valid. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/arity.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/arity.rs, line 78; opens the local source file" class="source-link">Binary kernel</a>.</p>
+<p><code>NullBuffer::union</code> means union of the <strong>sets of null positions</strong>, which is an AND of the <strong>validity</strong> bits. Do not mistake the function name for a bitwise OR of valid bits. SQL Boolean logic is more subtle: <code>false AND null</code> is false, while <code>true AND null</code> is null. Arrow provides Kleene Boolean kernels for this distinction. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/null.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/null.rs, line 79; opens the local source file" class="source-link">Null union</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/boolean.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-arith/src/boolean.rs, line 60; opens the local source file" class="source-link">Kleene AND</a>.</p>
+<h2 id="strings-and-string-views">Strings and string views</h2>
+<p>An ordinary <code>StringArray</code> uses validity, 32-bit offsets and a UTF-8 byte buffer. <code>LargeStringArray</code> uses 64-bit offsets. For an illustrative array <code>[&#39;ab&#39;, null, &#39;xyz&#39;, &#39;&#39;]</code>, offsets <code>[0, 2, 2, 5, 5]</code> and payload <code>abxyz</code> work with validity <code>[1, 0, 1, 1]</code>. Equal offsets alone cannot distinguish a null from a valid empty string. Reading element <code>i</code> uses the byte range between consecutive offsets. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/byte_array.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/byte_array.rs, line 87; opens the local source file" class="source-link">GenericByteArray</a>.</p>
+<p><code>StringViewArray</code> changes the tradeoff:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>String length</th>
+<th>Sixteen-byte view</th>
+<th>Additional payload</th>
+</tr>
+</thead><tbody><tr>
+<td>At most 12 bytes</td>
+<td>Length plus inline string bytes</td>
+<td>None for that value</td>
+</tr>
+<tr>
+<td>More than 12 bytes</td>
+<td>Length, four-byte prefix, buffer index and offset</td>
+<td>String bytes in a referenced buffer</td>
+</tr>
+</tbody></table></div>
+<p>The prefix can reject unequal long strings without fetching all their bytes, but equal prefixes do not establish string equality. View arrays can reference several payload buffers and reuse overlapping ranges. Filtering views copies the selected fixed-size view entries and shares the payload buffers. That can avoid substantial string copying, but can also retain large source buffers for a few surviving strings. A view is 16 bytes even for a one-character value; it is not unconditionally the smallest representation. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/byte_view_array.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/byte_view_array.rs, line 56; opens the local source file" class="source-link">View layout and access</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 1077; opens the local source file" class="source-link">view filter</a>.</p>
+<h2 id="nested-arrays-and-encoded-arrays">Nested arrays and encoded arrays</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Representation</th>
+<th>Physical pieces</th>
+<th>Important scan or compute consequence</th>
+</tr>
+</thead><tbody><tr>
+<td><code>List&lt;T&gt;</code></td>
+<td>Validity, offsets, child array</td>
+<td>Parent null, empty list and list containing null are different values</td>
+</tr>
+<tr>
+<td><code>Struct</code></td>
+<td>Parent validity and same-length child arrays</td>
+<td>A valid child slot does not make a null parent struct valid</td>
+</tr>
+<tr>
+<td><code>Map</code></td>
+<td>List-like offsets over key/value entries</td>
+<td>Keys and values must stay paired through selection</td>
+</tr>
+<tr>
+<td>Dictionary</td>
+<td>Integer keys and a dictionary values array</td>
+<td>Keys are meaningful only with their own dictionary; equal key numbers across batches need not mean equal values</td>
+</tr>
+<tr>
+<td>Run-end encoding</td>
+<td>Run ends and run values</td>
+<td>Logical length differs from number of stored values; not every downstream kernel preserves encoding</td>
+</tr>
+<tr>
+<td>Decimal128</td>
+<td>Fixed-width integer values plus precision/scale</td>
+<td>A 128-bit value is not the same thing as one cheap CPU SIMD lane</td>
+</tr>
+</tbody></table></div>
+<p>See the <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/array/mod.rs, line 18; opens the local source file" class="source-link">array implementations</a> and <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-schema/src/datatype.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-schema/src/datatype.rs, line 18; opens the local source file" class="source-link">data types</a>. Parquet dictionary encoding and Arrow dictionary arrays are separate choices. A Parquet dictionary page may be decoded into plain Arrow values, or a supported path may preserve a dictionary representation. Do not infer the in-memory array type from the file encoding alone.</p>
+<h2 id="slice-versus-filter-versus-take">Slice versus filter versus take</h2>
+<pre><code>slice -&gt; contiguous logical interval -&gt; share buffers and adjust visible range
+filter -&gt; Boolean selection -&gt; preserve selected row order and usually build compacted buffers
+take -&gt; explicit row indices -&gt; gather or reorder values, potentially repeating rows</code></pre>
+<p>The distinction is visible in <code>arrow-select</code>:</p>
+<ul>
+<li>Selecting every row can return a slice; selecting none returns an empty array.</li>
+<li>Primitive filtering allocates/copies selected values and handles output validity.</li>
+<li>Ordinary string filtering builds new offsets and copies selected payload bytes.</li>
+<li>String-view filtering copies views while sharing the backing payload buffers.</li>
+<li>A filter builder can reuse a selection strategy across multiple columns. In this checkout, selection above 0.8 uses a run/slice-oriented strategy; otherwise an index-oriented strategy is available. This is an implementation heuristic, not a universal optimum.</li>
+</ul>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 582; opens the local source file" class="source-link">filter dispatch</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 919; opens the local source file" class="source-link">primitive filter</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 1039; opens the local source file" class="source-link">string filter</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 37; opens the local source file" class="source-link">selection heuristic</a>.</p>
+<p>The mask itself has semantics. A filter retains true, non-null predicate slots; false and null predicates are rejected. That does not mean null values in an unrelated output column are removed. The test <code>test_filter_primitive_array_with_null</code> explicitly retains a null data value when its selection bit is true. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 1421; opens the local source file" class="source-link">Test</a>.</p>
+<h2 id="alignment-is-not-one-universal-number">Alignment is not one universal number</h2>
+<p>The format recommends aligned and padded buffers, but the implementation and the source of an allocation matter. The checked Arrow Rust allocation constant is <strong>128 bytes on x86_64</strong> and <strong>64 bytes on aarch64</strong>. Those constants are not a measurement of every machine&#39;s cache-line size. Buffers adopted from <code>Vec</code>, external producers, or slices need not preserve that preferred base alignment at the visible pointer. Typed access still requires the native element alignment. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/alloc/alignment.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/alloc/alignment.rs, line 26; opens the local source file" class="source-link">Allocation constants</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/scalar.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-buffer/src/buffer/scalar.rs, line 76; opens the local source file" class="source-link">typed alignment checks</a>, <a href="https://arrow.apache.org/docs/format/Columnar.html#buffer-alignment-and-padding">format alignment guidance</a>.</p>
+<p>A slice starting one <code>Int32</code> into a well-aligned buffer remains correctly aligned for <code>i32</code>, but is no longer at that original wide boundary. Correct SIMD code must handle unaligned loads, alignment peeling or a suitable fallback. Padding is not permission for arbitrary out-of-bounds Rust access; the implementation must prove that each load is legal.</p>
+<h2 id="c-interface-and-comet-handoff">C interface and Comet handoff</h2>
+<p>The C Data Interface describes arrays through buffers, type/schema information, offsets, children and release callbacks. The C Stream Interface adds a pull protocol for batches. They are in-process interoperability contracts, not network serialization formats. IPC and Flight solve different transport problems.</p>
+<figure class="diagram" id="diagram-13-c-interface-and-comet-handoff"><figcaption><span>C interface and Comet handoff</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-13-c-interface-and-comet-handoff" hidden>Actual size</button><a href="diagrams/13-c-interface-and-comet-handoff.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/13-c-interface-and-comet-handoff.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-13-c-interface-and-comet-handoff" tabindex="0" role="region" aria-label="C interface and Comet handoff"><img src="diagrams/13-c-interface-and-comet-handoff.svg" width="1037" height="639" alt="C interface and Comet handoff"></div></figure>
+<p>This sequence describes the JVM-input bridge, not the native Iceberg reader fetching Parquet directly. In the checked Comet code, <code>AlignedArrowStreamReader</code> imports and aligns arrays; <code>ScanExec::import_column</code> then applies Spark-compatible string decoding and <code>copy_or_unpack_array</code>. Ordinary columns can be cloned, while dictionaries are expanded and copied. A realignment can allocate. The source comment about removing the alignment wrapper after an Arrow upgrade is not proof that it has been removed: the wrapper is still present in this checkout.</p>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/aligned_stream_reader.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/aligned_stream_reader.rs, line 87; opens the local source file" class="source-link">stream import and alignment</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/scan.rs, line 178; opens the local source file" class="source-link">column import</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/copy.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/copy.rs, line 70; opens the local source file" class="source-link">copy/unpack implementation</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs, line 300; opens the local source file" class="source-link">Arrow FFI import</a>.</p>
+<h2 id="memory-accounting-example">Memory accounting example</h2>
+<p>These are illustrative payload calculations, excluding allocation rounding, reference objects, schema metadata and temporary buffers:</p>
+<pre><code>nullable Int64 with N rows = 8N value bytes + ceil(N / 8) validity bytes
+N = 8192 -&gt; 65536 + 1024 = 66560 bytes = 65 KiB
+three nullable Int64 columns -&gt; 195 KiB</code></pre>
+<p>For a hypothetical Q6 batch with three Decimal128 columns and one Date32 column, 8,192 rows require <code>8192 * (16 + 16 + 16 + 4) + 4 * 1024 = 430080</code> bytes, or <strong>420 KiB</strong>, before temporaries. This assumes those particular Arrow types; it is not an observed allocation from the saved benchmark.</p>
+<p>The live working set also includes decoded pages, compressed input ranges, output buffers, filter masks, dictionaries, hash tables, sort state and writer buffers. Multiplying by concurrent tasks and in-flight files can dominate the batch-size calculation. Array memory estimates can count a shared allocation more than once when summed naively; conversely, a small logical slice can retain a larger allocation. Executor RSS, allocator statistics and engine memory reservations answer different questions.</p>
+<h2 id="tests-and-remaining-evidence">Tests and remaining evidence</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Inspected test or source</th>
+<th>What it exercises</th>
+<th>What it does not prove</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs, line 616; opens the local source file" class="source-link">FFI offset round trip</a></td>
+<td>Sliced nullable arrays survive export/import</td>
+<td>All producers obey the ABI or all imports avoid copies</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 1354; opens the local source file" class="source-link">Sliced primitive filter</a></td>
+<td>Selection from a sliced input returns expected values</td>
+<td>Every selectivity is equally fast</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-select/src/filter.rs, line 1421; opens the local source file" class="source-link">Null-preserving filter</a></td>
+<td>Selected null data remains null</td>
+<td>SQL predicate correctness for every expression</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/aligned_stream_reader.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/aligned_stream_reader.rs, line 141; opens the local source file" class="source-link">Comet Decimal128 alignment test</a></td>
+<td>Under-aligned input is repaired before typed access</td>
+<td>The historical job incurred this cost</td>
+</tr>
+</tbody></table></div>
+<p>The practical question is not simply whether an operator uses Arrow. Ask which array representation it receives, which buffers it reads or rewrites, how long their owners live, and what representation leaves the operator.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="12-tpch-spark-versus-comet.html"><small>Previous</small>TPC-H benchmark findings</a><a href="14-vectorization-and-hardware.html"><small>Next</small>Vectorization and hardware</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

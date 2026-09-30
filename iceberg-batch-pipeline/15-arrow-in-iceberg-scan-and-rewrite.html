@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Arrow in Iceberg scans writes and data file rewrites | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html" aria-current="page"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="15-arrow-in-iceberg-scan-and-rewrite.md">Markdown source</a></header><article><h1 id="arrow-in-iceberg-scans-writes-and-data-file-rewrites">Arrow in Iceberg scans writes and data file rewrites</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#ownership-and-evidence">Ownership and evidence</a></li>
+<li><a href="#scan-work-reduction-ladder">Scan work reduction ladder</a></li>
+<li><a href="#concrete-comet-scan-entry-point">Concrete Comet scan entry point</a></li>
+<li><a href="#how-parquet-becomes-arrow">How Parquet becomes Arrow</a></li>
+<li><a href="#row-selection-and-late-materialization">Row selection and late materialization</a></li>
+<li><a href="#delete-semantics-before-instruction-tuning">Delete semantics before instruction tuning</a></li>
+<li><a href="#io-concurrency-is-not-simd">I/O concurrency is not SIMD</a></li>
+<li><a href="#batches-through-native-operators">Batches through native operators</a></li>
+<li><a href="#data-file-rewrite-versus-metadata-maintenance">Data file rewrite versus metadata maintenance</a></li>
+<li><a href="#rewrite-coordination-sequence">Rewrite coordination sequence</a></li>
+<li><a href="#native-write-data-path">Native write data path</a></li>
+<li><a href="#writer-memory-and-output-layout">Writer memory and output layout</a></li>
+<li><a href="#native-eligibility-remains-a-separate-question">Native eligibility remains a separate question</a></li>
+<li><a href="#two-different-improvement-questions">Two different improvement questions</a></li>
+<li><a href="#investigation-worksheet">Investigation worksheet</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="13-arrow-memory-and-kernels.html">Arrow memory</a> | <a href="14-vectorization-and-hardware.html">Vectorization and hardware</a></p>
+<p>The useful optimization order is to avoid unnecessary table work, avoid unnecessary file bytes, decode only what is needed, and then execute the remaining work efficiently. Arrow connects the decode and compute stages; it does not choose the Iceberg snapshot or commit replacement files. This chapter follows that boundary through the actual Comet integration and distinguishes a faster rewrite job from a better layout for future reads.</p>
+<h2 id="ownership-and-evidence">Ownership and evidence</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Layer</th>
+<th>Owns</th>
+<th>Does not own</th>
+</tr>
+</thead><tbody><tr>
+<td>Iceberg Java planning</td>
+<td>Snapshot/file-task semantics, applicable deletes and table metadata</td>
+<td>CPU instruction selection inside Rust kernels</td>
+</tr>
+<tr>
+<td>Spark</td>
+<td>Query plan, distribution, scheduling, attempts and stage recovery</td>
+<td>Arrow buffer layout specifications</td>
+</tr>
+<tr>
+<td>Comet</td>
+<td>Eligible native plan regions, bridges, native scan/write integration and metrics</td>
+<td>An independent Iceberg commit authority</td>
+</tr>
+<tr>
+<td>Iceberg Rust reader/writer</td>
+<td>Task-level read semantics and eligible file production</td>
+<td>Replacing the Spark driver and Iceberg Java transaction</td>
+</tr>
+<tr>
+<td>Parquet Rust</td>
+<td>File/page decoding, Arrow reader APIs and Parquet encoding</td>
+<td>General SQL optimization or snapshot selection</td>
+</tr>
+<tr>
+<td>Arrow Rust</td>
+<td>Arrays, buffers, kernels and interoperability</td>
+<td>Distributed task scheduling</td>
+</tr>
+<tr>
+<td>Hardware and OS</td>
+<td>Instruction execution, caches, memory and I/O resources</td>
+<td>Whether a delete file applies to a particular data file</td>
+</tr>
+</tbody></table></div>
+<p>For Comet&#39;s dependency path, the inspected Iceberg Rust revision is <code>bb1e4a4861f02377489eff818b75138f414c4cb0</code>, as pinned in <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml, line 67; opens the local source file" class="source-link">Comet&#39;s manifest</a>. Its source is available in the local Cargo checkout. Comet resolves Arrow/Parquet 59.3.0, while the separately inspected Arrow tree is 60.0.0. Generic Arrow APIs below are labelled as source concepts rather than proof of every feature in the linked binary. The <a href="09-source-ledger.html">earlier source ledger</a> and <a href="13-arrow-memory-and-kernels.html#versions-and-scope">Arrow chapter</a> record the other boundaries.</p>
+<h2 id="scan-work-reduction-ladder">Scan work reduction ladder</h2>
+<figure class="diagram" id="diagram-15-scan-work-reduction-ladder"><figcaption><span>Scan work reduction ladder</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-15-scan-work-reduction-ladder" hidden>Actual size</button><a href="diagrams/15-scan-work-reduction-ladder.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/15-scan-work-reduction-ladder.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-15-scan-work-reduction-ladder" tabindex="0" role="region" aria-label="Scan work reduction ladder"><img src="diagrams/15-scan-work-reduction-ladder.svg" width="2281" height="233" alt="Scan work reduction ladder"></div></figure>
+<p>The drawing compresses metadata loading, selection and decoding. It does not imply all deletes are a post-scan filter: the checked reader incorporates position deletes into row selection and equality-delete conditions into the reader predicate.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Stage</th>
+<th>Work avoided</th>
+<th>Evidence and caveat</th>
+</tr>
+</thead><tbody><tr>
+<td>Iceberg partition/file pruning</td>
+<td>Opening irrelevant data files</td>
+<td>Metadata bounds must safely rule out a match; see <a href="02-iceberg-scan.html">scan planning</a></td>
+</tr>
+<tr>
+<td>Parquet row-group pruning</td>
+<td>Reading/decoding irrelevant row groups</td>
+<td>Uses available statistics; absent or inconclusive statistics retain candidates</td>
+</tr>
+<tr>
+<td>Column projection</td>
+<td>Reading unneeded column chunks</td>
+<td>Predicate and delete evaluation can require columns absent from final output</td>
+</tr>
+<tr>
+<td>Page-index row selection</td>
+<td>Unneeded row ranges/pages</td>
+<td>Requires usable column and offset indexes for metadata-driven page pruning</td>
+</tr>
+<tr>
+<td>Reader predicates</td>
+<td>Decoding some later columns for rejected rows</td>
+<td>Savings depend on selectivity, locality, projection overlap and reader behavior</td>
+</tr>
+<tr>
+<td>Residual evaluation</td>
+<td>Incorrectly passing candidate rows downstream</td>
+<td>Metadata pruning is not universally exact row filtering</td>
+</tr>
+<tr>
+<td>Native kernels</td>
+<td>CPU cost of remaining work</td>
+<td>Can reduce time without reducing physical bytes read</td>
+</tr>
+</tbody></table></div>
+<p>This ordering explains why an improved file layout can beat an instruction-level optimization: work that is pruned does not need decoding or SIMD at all.</p>
+<h2 id="concrete-comet-scan-entry-point">Concrete Comet scan entry point</h2>
+<p><code>IcebergScanExec::execute_with_tasks</code> loads FileIO, uses the DataFusion session batch size, fills missing Parquet delete-file sizes, and constructs the Iceberg Rust <code>ArrowReaderBuilder</code>. It sets file concurrency, enables row selection and supplies a 512 KiB metadata-size hint. It submits the task stream and wraps returned batches with Spark-compatible schema adaptation and metrics. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 175; opens the local source file" class="source-link">Comet scan</a>.</p>
+<p>The 512 KiB value is a metadata read hint, not a Parquet page size, an Arrow batch size or a CPU cache size. The file-concurrency setting controls overlapping file work within this path; it does not change Spark&#39;s number of task slots. Filling delete-file sizes can itself generate storage metadata requests. An error there is not permission to ignore deletes.</p>
+<p>The pinned Iceberg Rust reader opens the Parquet file, resolves field IDs/name mappings, configures projection, combines predicates and deletes, and constructs a <code>ParquetRecordBatchStreamBuilder</code>. Its output transformer handles promotions, reordering, defaults, partition constants and metadata fields as applicable. This work is necessary for Iceberg semantics; an array with the right physical bytes but the wrong field identity is still wrong. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 135; opens the local source file" class="source-link">Pinned reader pipeline</a>.</p>
+<h2 id="how-parquet-becomes-arrow">How Parquet becomes Arrow</h2>
+<pre><code>compressed page bytes -&gt; decompress when required -&gt; decode levels and encoded values -&gt; construct Arrow buffers -&gt; assemble arrays and batches</code></pre>
+<p>These are logical stages. Implementations can combine steps, reuse buffers or process fragments; not every page uses every encoding.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>File concept</th>
+<th>Reader work</th>
+<th>Hardware cost to reason about</th>
+</tr>
+</thead><tbody><tr>
+<td>Compression codec</td>
+<td>Expand compressed payload</td>
+<td>CPU throughput versus reduced storage/network bytes</td>
+</tr>
+<tr>
+<td>Dictionary encoding</td>
+<td>Decode identifiers and resolve dictionary values or retain a supported dictionary form</td>
+<td>Small-dictionary locality versus gathers and output materialization</td>
+</tr>
+<tr>
+<td>RLE / bit packing</td>
+<td>Expand runs and unpack narrow integers</td>
+<td>Specialized shifts/masks, regular blocks and tail handling</td>
+</tr>
+<tr>
+<td>Definition levels</td>
+<td>Reconstruct null and nested-presence information</td>
+<td>Bitmap construction and value placement</td>
+</tr>
+<tr>
+<td>Repetition levels</td>
+<td>Reconstruct repeated/nested structure</td>
+<td>Offset generation, record boundaries and extra state</td>
+</tr>
+<tr>
+<td>Strings</td>
+<td>Build offsets/payload or view representation, preserve UTF-8 requirements</td>
+<td>Copying, validation, payload locality and retained memory</td>
+</tr>
+<tr>
+<td>Projection</td>
+<td>Build only required columns and needed dependencies</td>
+<td>Avoided decode can exceed the benefit of a faster kernel</td>
+</tr>
+</tbody></table></div>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/file/serialized_reader.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/file/serialized_reader.rs, line 404; opens the local source file" class="source-link">page decompression</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/record_reader/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/record_reader/mod.rs, line 99; opens the local source file" class="source-link">record reader</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/array_reader/primitive_array.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/array_reader/primitive_array.rs, line 158; opens the local source file" class="source-link">primitive array reader</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/util/bit_pack.rs, line 18; opens the local source file" class="source-link">bit unpacking</a>.</p>
+<p>A nested record can have multiple encoded leaf values, so encoded-value count, logical-row count and Arrow child-array length need not be equal. <code>read_records</code> and <code>skip_records</code> operate with record/level semantics; treating each encoded value as a complete table row breaks nested data.</p>
+<h2 id="row-selection-and-late-materialization">Row selection and late materialization</h2>
+<p>The Arrow Parquet builder exposes projection, row-group selection, <code>RowSelection</code> and <code>RowFilter</code>. It does not itself understand arbitrary SQL or Iceberg catalog predicates. Its caller supplies selections or predicate implementations. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs, line 191; opens the local source file" class="source-link">Reader contract</a>.</p>
+<p><code>RowSelection</code> describes selected/skipped logical row ranges. Row-group filtering happens first, so the selection is expressed over the remaining row groups. <code>RowFilter</code> evaluates predicates on their requested columns and refines the selection before final output projection. This can delay materializing expensive output columns until cheaper predicates eliminate rows. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs, line 366; opens the local source file" class="source-link">Row-selection API</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/filter.rs, line 137; opens the local source file" class="source-link">RowFilter</a>.</p>
+<p>The tradeoff matters:</p>
+<ul>
+<li>A cheap narrow predicate that removes most rows can save later decode and output work.</li>
+<li>An expensive wide predicate that keeps almost every row can add passes without much benefit.</li>
+<li>Scattered survivors can still require many pages, even at low row selectivity.</li>
+<li>Predicate and output projections can overlap, causing repeated decoding unless the reader can reuse/cache it.</li>
+<li>Page indexes can locate useful regions; missing indexes reduce pruning opportunities without authorizing incorrect results.</li>
+</ul>
+<p>The 60.0.0 reader contains optimizations for some adjacent predicates on the same column. That is not a claim that every optimization is present in Comet&#39;s resolved 59.3.0 reader, or that the pinned Iceberg adapter splits its expression into that predicate shape.</p>
+<h2 id="delete-semantics-before-instruction-tuning">Delete semantics before instruction tuning</h2>
+<p>The pinned pipeline builds an equality-delete predicate and ANDs it with the task predicate. Position-delete indexes or deletion vectors become a keep-row selection, intersected with any predicate-derived row selection. It then builds the reader stream and transforms batches to the table schema. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 557; opens the local source file" class="source-link">Delete/predicate combination</a>, <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 676; opens the local source file" class="source-link">position selection intersection</a>.</p>
+<p>Position deletes refer to positions in the original data file, not row numbers in an already-filtered output batch. Skipped row groups and pages must not shift their meaning. Equality deletes depend on the specified field identities and applicable delete semantics; they are not equivalent to dropping any row whose visible output happens to resemble a delete row.</p>
+<p>The test <code>test_position_delete_across_multiple_row_groups</code> targets exactly this boundary; related tests cover selected/skipped row groups and an end-to-end deletion vector. These were inspected, not rerun. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/positional_deletes.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/positional_deletes.rs, line 339; opens the local source file" class="source-link">Delete tests</a>.</p>
+<p>Bitmap intersection may be efficient, but loading delete files, resolving field IDs, building predicates and fetching pages can dominate. “Delete filtering is a SIMD AND” is therefore an incomplete explanation of an Iceberg scan.</p>
+<h2 id="io-concurrency-is-not-simd">I/O concurrency is not SIMD</h2>
+<p>The pinned reader has a single-concurrency fast path and bounded unordered file processing for higher concurrency. Its file reader coalesces nearby byte ranges, fetches merged ranges with bounded concurrency and slices the returned bytes back into requested ranges. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 65; opens the local source file" class="source-link">File pipeline</a>, <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs, line 65; opens the local source file" class="source-link">range fetching</a>.</p>
+<p>Coalescing trades extra bytes in the gaps for fewer requests. Concurrency trades more in-flight memory and requests for less exposed latency. Neither changes the CPU lane width. An async API also does not prove that compression or decoding runs on a dedicated background CPU pool; inspect where the actual synchronous work is polled/executed.</p>
+<p>The range-coalescing test checks that merged reads reconstruct the requested slices. It does not establish an optimum coalescing distance or request count for a production object store. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs, line 269; opens the local source file" class="source-link">Test</a>.</p>
+<h2 id="batches-through-native-operators">Batches through native operators</h2>
+<p>After the reader, a native region can keep <code>RecordBatch</code>-based execution across filter, projection, aggregate, join and exchange. This avoids a mandatory row conversion between every operator; it does not mean all kernels fuse into one loop or share one output allocation.</p>
+<p>The checked DataFusion <code>FilterExec</code> evaluates a predicate and applies Arrow filtering; expression evaluation dispatches to typed kernels. Hash joins and aggregates add hash tables, key representations, random probes and potentially spill. Sorting can build index or row-comparison representations. These algorithms are not all sequential SIMD scans. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/filter.rs, line 989; opens the local source file" class="source-link">DataFusion filter</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-expr/src/expressions/binary.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-expr/src/expressions/binary.rs, line 271; opens the local source file" class="source-link">binary expressions</a>. This separate DataFusion checkout is <code>cd05b417544262f8a6c114e304055da53e5b4162</code>, not proof of the code in a historical Comet binary.</p>
+<p>For the <a href="12-tpch-spark-versus-comet.html#q6-question-and-plan-proof">saved Q6 plans</a>, the established observation remains: the Spark baseline converts scan batches to rows before residual work; Comet retains the native scan/filter/project/aggregate/exchange region and converts the final result. The new Arrow/SIMD analysis explains possible mechanisms inside that region. It does not turn the roughly 2x historical suite result into a measured SIMD speedup.</p>
+<h2 id="data-file-rewrite-versus-metadata-maintenance">Data file rewrite versus metadata maintenance</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Operation</th>
+<th>Reads or writes table-row data?</th>
+<th>Where Arrow/CPU work could matter</th>
+</tr>
+</thead><tbody><tr>
+<td>Bin-pack data-file rewrite</td>
+<td>Reads selected input files and writes replacement files</td>
+<td>Decode, delete application, batch handling, encode/compress</td>
+</tr>
+<tr>
+<td>Sort or Z-order data-file rewrite</td>
+<td>Reads/writes rows and reorganizes them</td>
+<td>Above costs plus sort, repartition, shuffle, key computation and possible spill</td>
+</tr>
+<tr>
+<td>Copy-on-write update/delete</td>
+<td>Rewrites affected row data</td>
+<td>Predicate evaluation and native read/write eligibility</td>
+</tr>
+<tr>
+<td>Position-delete-file rewrite</td>
+<td>Rewrites delete records, not necessarily the table&#39;s data files</td>
+<td>Its own scan/write path; no automatic claim of native support</td>
+</tr>
+<tr>
+<td>Manifest rewrite</td>
+<td>Reorganizes metadata records</td>
+<td>Not a Parquet table-row SIMD scan merely because it is called a rewrite</td>
+</tr>
+<tr>
+<td>Snapshot expiration / orphan cleanup</td>
+<td>Metadata and storage-object management</td>
+<td>Listing, metadata validation and object deletion, not the normal Arrow compute path</td>
+</tr>
+</tbody></table></div>
+<p>Data-file compaction is not byte concatenation of arbitrary Parquet files. Input schema, deletes, partitioning, output metadata and file encoding must remain valid. The Java bin-pack runner builds an Iceberg read over a staged file-task group, then writes replacements. It uses no redistribution when the output spec matches, but requests range distribution when the spec changes. “Bin pack never shuffles” is too strong. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkBinPackFileRewriteRunner.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkBinPackFileRewriteRunner.java, line 40; opens the local source file" class="source-link">Bin-pack runner</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkShufflingFileRewriteRunner.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkShufflingFileRewriteRunner.java, line 107; opens the local source file" class="source-link">shuffling runner</a>.</p>
+<h2 id="rewrite-coordination-sequence">Rewrite coordination sequence</h2>
+<figure class="diagram" id="diagram-15-rewrite-coordination-sequence"><figcaption><span>Rewrite coordination sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-15-rewrite-coordination-sequence" hidden>Actual size</button><a href="diagrams/15-rewrite-coordination-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/15-rewrite-coordination-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-15-rewrite-coordination-sequence" tabindex="0" role="region" aria-label="Rewrite coordination sequence"><img src="diagrams/15-rewrite-coordination-sequence.svg" width="1639" height="823" alt="Rewrite coordination sequence"></div></figure>
+<p>This is an ownership sequence, not an exhaustive API trace. The executor lane deliberately includes JVM fallback. The rewrite action chooses its runner, plans groups and uses a rewrite commit manager; partial-progress mode changes the grouping of commits. New files existing in storage do not mean a snapshot has published them. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java, line 178; opens the local source file" class="source-link">Rewrite action</a>.</p>
+<h2 id="native-write-data-path">Native write data path</h2>
+<figure class="diagram" id="diagram-15-native-write-data-path"><figcaption><span>Native write data path</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-15-native-write-data-path" hidden>Actual size</button><a href="diagrams/15-native-write-data-path.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/15-native-write-data-path.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-15-native-write-data-path" tabindex="0" role="region" aria-label="Native write data path"><img src="diagrams/15-native-write-data-path.svg" width="2337" height="237" alt="Native write data path"></div></figure>
+<p>Comet creates an Iceberg Rust <code>ParquetWriterBuilder</code>, wraps it in a rolling writer and DataFile writer, and selects unpartitioned, fanout or clustered routing. It conforms each batch to the field-ID-decorated target schema and writes paced units. A metadata-only schema adjustment can reuse buffers; a real cast or partition gather need not. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 507; opens the local source file" class="source-link">Writer construction</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 849; opens the local source file" class="source-link">schema conformance</a>.</p>
+<p>The pinned Iceberg writer uses <code>AsyncArrowWriter</code>, tracks NaN counts, finishes the file and builds DataFile information from Parquet metadata. Arrow&#39;s async writer wraps a synchronous Arrow encoder plus an async output sink. Async output does not make compression CPU-free. <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/parquet_writer.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/parquet_writer.rs, line 620; opens the local source file" class="source-link">Iceberg Parquet writer</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/async_writer/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/async_writer/mod.rs, line 158; opens the local source file" class="source-link">Arrow async writer structure</a>.</p>
+<h2 id="writer-memory-and-output-layout">Writer memory and output layout</h2>
+<p>An Arrow batch, a Parquet page, a row group and a data file are different units. Multiple batches can contribute to one row group; a batch can be split across row groups. File rolling wraps that process. The writer keeps encoded column/page state, dictionaries and other metadata before flushing a row group. Its <code>memory_size</code> and <code>in_progress_size</code> answer different questions: memory currently used versus estimated encoded row-group size. <a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_writer/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_writer/mod.rs, line 97; opens the local source file" class="source-link">Arrow writer buffering</a>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Choice</th>
+<th>Potential benefit</th>
+<th>Cost or risk to measure</th>
+</tr>
+</thead><tbody><tr>
+<td>Larger output files</td>
+<td>Fewer opens, footer reads, tasks and file metadata entries</td>
+<td>Less file-level parallelism; target size is not a perfect on-disk equality</td>
+</tr>
+<tr>
+<td>Larger row groups</td>
+<td>Amortized metadata and possible encoding/compression benefits</td>
+<td>Larger buffered state and coarser row-group pruning</td>
+</tr>
+<tr>
+<td>Smaller pages / useful page indexes</td>
+<td>Finer skipping opportunities</td>
+<td>More metadata and page-processing overhead</td>
+</tr>
+<tr>
+<td>Clustering/sort order</td>
+<td>Narrower useful bounds, better compression or long matching runs</td>
+<td>Sort/shuffle cost, spills, possible skew</td>
+</tr>
+<tr>
+<td>Stronger compression</td>
+<td>Fewer bytes stored, fetched or transmitted</td>
+<td>More encoding CPU; decode tradeoff depends on codec and data</td>
+</tr>
+<tr>
+<td>Fanout writers</td>
+<td>Accept input spanning many partitions</td>
+<td>More simultaneously open writers and buffered state</td>
+</tr>
+<tr>
+<td>Clustered input</td>
+<td>Fewer active partition writers</td>
+<td>Upstream distribution/order requirements must hold</td>
+</tr>
+</tbody></table></div>
+<p>These are tradeoffs, not universal tuning recommendations. A wider schema or high-cardinality strings can make writer memory large even when input batch rows are unchanged. Multiply per-writer state by active partitions and tasks before sizing the executor.</p>
+<h2 id="native-eligibility-remains-a-separate-question">Native eligibility remains a separate question</h2>
+<p>The presence of a generic Arrow or Iceberg Rust capability does not automatically enable it in Comet. The checked native-write serializer rejects format version 3 or later and has gates for schema, properties, storage, encryption, Bloom-filter requests and other compatibility conditions. Existing write flags remain opt-in in this notebook&#39;s recorded branch. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala, line 118; opens the local source file" class="source-link">Native write gate</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala, line 246; opens the local source file" class="source-link">format-version gate</a>.</p>
+<p>Therefore, confirm scan and writer engagement independently for each rewrite plan. An accelerated read with a JVM writer is possible; so is an eligible native writer with non-native work elsewhere. Read support for a delete-vector format is not proof of native write support for that table version. See <a href="06-iceberg-write.html">write and commit details</a> and <a href="08-capabilities-and-debugging.html">capabilities</a>.</p>
+<h2 id="two-different-improvement-questions">Two different improvement questions</h2>
+<p><strong>Did the rewrite job become faster?</strong> Measure its read/decode/delete, shuffle/sort, encode/compress, upload and commit phases, with the same input snapshot and intended output layout. Native execution may accelerate eligible data-plane work, but catalog commit latency and driver planning can remain unchanged.</p>
+<p><strong>Did the rewritten layout improve subsequent queries?</strong> Compare representative reads before and after, preserving the same logical live rows. Measure file counts, row groups, bounds, page indexes, selected bytes, requests and task counts. Removing small files may reduce overhead; sorting may improve pruning. Combining poorly clustered files can also broaden bounds. Fewer files alone is not proof of fewer bytes read.</p>
+<p>Illustrative accounting: replacing 1,000 small files with 20 larger files means 50x fewer file objects, not 50x faster scans. A full scan may read almost the same live-row payload; a selective scan may change substantially depending on layout. Metadata, network latency, parallelism and decode determine the result.</p>
+<h2 id="investigation-worksheet">Investigation worksheet</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Area</th>
+<th>Preserve</th>
+<th>Question it answers</th>
+</tr>
+</thead><tbody><tr>
+<td>Identity</td>
+<td>Snapshot IDs, schema/field IDs, delete files, code revisions and binary checksum</td>
+<td>Was the comparison logically and semantically equivalent?</td>
+</tr>
+<tr>
+<td>Plan</td>
+<td>Initial and final AQE plans, native nodes and fallback reasons</td>
+<td>Which work actually ran native?</td>
+</tr>
+<tr>
+<td>Read layout</td>
+<td>Files, bytes, compression, row groups, pages, indexes and sort order</td>
+<td>Was less work required, or was the same work faster?</td>
+</tr>
+<tr>
+<td>Scan runtime</td>
+<td>Physical bytes and requests, output rows, decode/delete CPU, file concurrency</td>
+<td>Is storage, decode or semantics dominating?</td>
+</tr>
+<tr>
+<td>Compute</td>
+<td>Hot-loop profiles, conversions, allocations, hash/sort state, spills</td>
+<td>Would SIMD, fewer passes or a different algorithm help?</td>
+</tr>
+<tr>
+<td>Write</td>
+<td>Rows, output sizes, active writers, buffered memory, codec CPU and close time</td>
+<td>Is encoding, partitioning or I/O the write bottleneck?</td>
+</tr>
+<tr>
+<td>Commit</td>
+<td>Metadata reconciliation, catalog latency, validation/retries and publication outcome</td>
+<td>Is the serial/control-plane part limiting total improvement?</td>
+</tr>
+<tr>
+<td>Correctness</td>
+<td>Nulls, decimals, nested rows, deletes, schema evolution and retry outcomes</td>
+<td>Was speed gained without changing results?</td>
+</tr>
+</tbody></table></div>
+<p>No scan/rewrite benchmark, hardware-counter collection or new native capability test was run for this documentation update. The proposed measurements are the next evidence needed, not results already obtained.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="14-vectorization-and-hardware.html"><small>Previous</small>Vectorization and hardware</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>
