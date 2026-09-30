@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(237, 233, 254) Iceberg Rust
+    participant I as ArrowReader
+  end
+  box rgb(255, 237, 213) Parquet reader
+    participant P as Metadata and projection
+    participant D as Page decoder
+  end
+  box rgb(241, 245, 249) File storage
+    participant O as FileRead
+  end
+  I->>P: Open assigned file with size and read options
+  P->>O: Fetch footer range using metadata size hint
+  O-->>P: Return metadata bytes
+  opt Additional metadata or indexes needed
+    P->>O: Fetch additional metadata and index ranges
+    O-->>P: Return requested bytes
+  end
+  P->>P: Resolve schema, field IDs and projected leaves
+  I->>P: Install row groups, row selection and row filters
+  P->>O: Fetch selected coalesced column/page ranges
+  O-->>D: Supply encoded bytes
+  D->>D: Decompress and decode predicate columns
+  D->>D: Apply row filters and decode needed output
+  D-->>I: Return RecordBatch
+  I->>I: Apply table-schema transformations and constants

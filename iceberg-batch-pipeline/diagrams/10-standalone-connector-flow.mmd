@@ -1,0 +1,28 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DF["DataFusion application"]
+    Q["DataFusion plan"]
+    TP["IcebergTableProvider"]
+    EX["IcebergTableScan"]
+    F["Retained exact FilterExec"]
+    Q --> TP --> EX
+  end
+  subgraph ICE["Iceberg Rust"]
+    CAT["Catalog and table metadata"]
+    PLAN["Build Iceberg table scan"]
+    READ["ArrowReader"]
+    TP --> CAT
+    EX --> PLAN --> READ
+    READ --> F
+  end
+  subgraph STORE["Storage"]
+    O[("Metadata, data and deletes")]
+    CAT --> O
+    O --> READ
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef ext fill:#f1f5f9,stroke:#64748b,color:#334155
+  class Q,TP,EX,F native
+  class CAT,PLAN,READ ice
+  class O ext

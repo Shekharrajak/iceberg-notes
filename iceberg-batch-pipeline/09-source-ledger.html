@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source revisions evidence and validation limits | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html" aria-current="page"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="09-source-ledger.md">Markdown source</a></header><article><h1 id="source-revisions-evidence-and-validation-limits">Source revisions evidence and validation limits</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#checkout-scope">Checkout scope</a></li>
+<li><a href="#iceberg-planning">Iceberg planning</a></li>
+<li><a href="#comet-scan">Comet scan</a></li>
+<li><a href="#iceberg-rust-reader">Iceberg Rust reader</a></li>
+<li><a href="#parquet">Parquet</a></li>
+<li><a href="#comet-runtime">Comet runtime</a></li>
+<li><a href="#memory">Memory</a></li>
+<li><a href="#spark-scheduling">Spark scheduling</a></li>
+<li><a href="#spark-networking">Spark networking</a></li>
+<li><a href="#shuffle">Shuffle</a></li>
+<li><a href="#writes">Writes</a></li>
+<li><a href="#iceberg-commits">Iceberg commits</a></li>
+<li><a href="#datafusion-and-arrow">DataFusion and Arrow</a></li>
+<li><a href="#tests-inspected">Tests inspected</a></li>
+<li><a href="#revalidation-procedure">Revalidation procedure</a></li></ul></nav></details>
+<p><a href="index.html">Index</a></p>
+<h2 id="checkout-scope">Checkout scope</h2>
+<p>Checked on 2026-09-30. These are local source revisions, not a claim that every repository is at current upstream HEAD or linked into the same binary.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Repository</th>
+<th>Local root</th>
+<th>HEAD</th>
+</tr>
+</thead><tbody><tr>
+<td>Comet</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/datafusion-comet</code></td>
+<td><code>184accac5b9cee6b761a6673c73c263adedef45e</code></td>
+</tr>
+<tr>
+<td>Spark</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/spark</code></td>
+<td><code>f9358a5587a2d512c5cf08ba4b10d60007c93f6e</code></td>
+</tr>
+<tr>
+<td>Iceberg Java</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/iceberg</code></td>
+<td><code>5e7169168db3d34e29354c6f59ec4d6e420b8d2d</code></td>
+</tr>
+<tr>
+<td>DataFusion</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/datafusion</code></td>
+<td><code>cd05b417544262f8a6c114e304055da53e5b4162</code></td>
+</tr>
+<tr>
+<td>datafusion-iceberg</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/datafusion-iceberg</code></td>
+<td><code>b12e9871dd2b2632cd05786d9f12dd6cde47dc2e</code></td>
+</tr>
+<tr>
+<td>arrow-rs</td>
+<td><code>/Users/srajak/Documents/repos/oss/apache/arrow-rs</code></td>
+<td><code>b89e3020d9ad6c5fc5c9e9acafc83fb21866f536</code></td>
+</tr>
+<tr>
+<td>Iceberg Rust used by Comet</td>
+<td>Cargo git checkout <code>iceberg-rust-1cfaaa0dd97c960f/bb1e4a4</code></td>
+<td><code>bb1e4a4861f02377489eff818b75138f414c4cb0</code></td>
+</tr>
+</tbody></table></div>
+<p><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml, line 40; opens the local source file" class="source-link">Comet dependency declarations</a> specify DataFusion 55.1.0, Arrow/Parquet 59.2.0 and the Iceberg Rust revision above. The separate DataFusion and Arrow checkouts are conceptual/API references, not substitutes for verifying resolved build dependencies.</p>
+<p>The Comet worktree has existing local edits in the Iceberg scan serde and native scan test suite, plus two benchmark files. The notable semantic change allows safe partial residual weakening using predicate polarity. It is explicitly labelled uncommitted throughout the notes. No source edits were made for this notebook. Spark has unrelated untracked Kafka work; Iceberg has unrelated untracked research files. Those were left untouched.</p>
+<p>The older note and presentation were preserved. The documentation collection is the only requested repository addition. No commit, push, benchmark, engine build or engine test run is implied.</p>
+<h2 id="iceberg-planning">Iceberg planning</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DataTableScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DataTableScan.java, line 64; opens the local source file" class="source-link">DataTableScan.doPlanFiles</a></td>
+<td>Selected snapshot data/delete manifests and ManifestGroup construction</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java, line 177; opens the local source file" class="source-link">ManifestGroup.planFiles</a></td>
+<td>Residual caches, delete index and file scan task creation</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DeleteFileIndex.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DeleteFileIndex.java, line 150; opens the local source file" class="source-link">DeleteFileIndex.forEntry and forDataFile</a></td>
+<td>Sequence/partition/path-based delete association</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/util/TableScanUtil.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/util/TableScanUtil.java, line 57; opens the local source file" class="source-link">TableScanUtil</a></td>
+<td>Split/group work and open/delete-cost weights</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkScanBuilder.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkScanBuilder.java, line 153; opens the local source file" class="source-link">SparkScanBuilder</a></td>
+<td>Filter/projection pushdown and aggregate metadata path</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkPartitioningAwareScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkPartitioningAwareScan.java, line 178; opens the local source file" class="source-link">SparkPartitioningAwareScan</a></td>
+<td>Materialize tasks and group for Spark</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatchQueryScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatchQueryScan.java, line 105; opens the local source file" class="source-link">SparkBatchQueryScan</a></td>
+<td>Runtime partition filtering</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatch.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatch.java, line 96; opens the local source file" class="source-link">SparkBatch</a></td>
+<td>Input partitions and reader-factory eligibility</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/v2/BatchScanExec.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/v2/BatchScanExec.scala, line 39; opens the local source file" class="source-link">Spark BatchScanExec</a></td>
+<td>Scan-to-batch, filtered partitions and DataSourceRDD</td>
+</tr>
+</tbody></table></div>
+<p>Iceberg integration examples deliberately identify the v3.5 source module. Consult the matching module and Comet shim before asserting behavior for another Spark version.</p>
+<h2 id="comet-scan">Comet scan</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometScanRule.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometScanRule.scala, line 443; opens the local source file" class="source-link">CometScanRule</a></td>
+<td>Recognized Iceberg scans, schema/version/metadata/delete/DPP gates</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometScanRule.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometScanRule.scala, line 1214; opens the local source file" class="source-link">Iceberg scheme allowlist</a></td>
+<td>Readable storage schemes, distinct from generic Parquet support</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala, line 100; opens the local source file" class="source-link">Scan metadata field allowlist</a></td>
+<td>Four exposed metadata fields</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala, line 652; opens the local source file" class="source-link">Residual conversion</a></td>
+<td>Predicate/type limits and local polarity change</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala, line 945; opens the local source file" class="source-link">Partition serialization</a></td>
+<td>Shared pools, task slices, historical/delete-required fields</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergNativeScanExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergNativeScanExec.scala, line 87; opens the local source file" class="source-link">CometIcebergNativeScanExec</a></td>
+<td>DPP-resolved serialization, unknown partitioning, no ordering</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs, line 1852; opens the local source file" class="source-link">Native Iceberg plan construction</a></td>
+<td>Custom IcebergScanExec, not generic Parquet datasource</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 175; opens the local source file" class="source-link">Native Iceberg scan execution</a></td>
+<td>FileIO, delete-size stats, concurrency, page selection, schema adaptation</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_common.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_common.rs, line 51; opens the local source file" class="source-link">Native Iceberg storage</a></td>
+<td>Storage factories, read/write distinction and credential integration</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala, line 114; opens the local source file" class="source-link">Comet configuration</a></td>
+<td>Scan/write defaults and file concurrency</td>
+</tr>
+</tbody></table></div>
+<h2 id="iceberg-rust-reader">Iceberg Rust reader</h2>
+<p>These links point to the exact Cargo checkout pinned by Comet, not the separate local iceberg-rust branch.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/mod.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/mod.rs, line 65; opens the local source file" class="source-link">ArrowReaderBuilder</a></td>
+<td>Concurrency, row-group/page/bloom options and defaults</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 66; opens the local source file" class="source-link">Reader pipeline</a></td>
+<td>Task stream execution and concurrency</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 139; opens the local source file" class="source-link">File processing</a></td>
+<td>Footer, IDs, name mapping, projection and lineage metadata</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 372; opens the local source file" class="source-link">Empty projection handling</a></td>
+<td>Difference between metadata-only projection and empty COUNT-style projection</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 557; opens the local source file" class="source-link">Delete and selection composition</a></td>
+<td>Combined equality predicate, row groups, row selections and position deletes</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/row_filter.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/row_filter.rs, line 183; opens the local source file" class="source-link">Byte-range row-group ownership</a></td>
+<td>Half-open row-group midpoint ownership across splits</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/file_reader.rs, line 58; opens the local source file" class="source-link">ArrowFileReader</a></td>
+<td>Byte reads, range coalescing and bounded range-fetch concurrency</td>
+</tr>
+</tbody></table></div>
+<p>Portable upstream root for these files: <a href="https://github.com/apache/iceberg-rust/tree/bb1e4a4861f02377489eff818b75138f414c4cb0">Iceberg Rust at the pinned revision</a>.</p>
+<h2 id="parquet">Parquet</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/parquet/src/main/java/org/apache/iceberg/parquet/ReadConf.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/parquet/src/main/java/org/apache/iceberg/parquet/ReadConf.java, line 64; opens the local source file" class="source-link">Java ReadConf</a></td>
+<td>Schema ID strategies and explicit row-group metrics/dictionary/bloom pruning</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/lib.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/lib.rs, line 28; opens the local source file" class="source-link">Parquet crate concepts</a></td>
+<td>File layout and Arrow integration</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_reader/mod.rs, line 326; opens the local source file" class="source-link">Arrow reader builder</a></td>
+<td>Independent batch size, row groups, projection, row selection and row filter</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_writer/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/arrow/arrow_writer/mod.rs, line 360; opens the local source file" class="source-link">ArrowWriter</a></td>
+<td>Batch write, row-group flush and file close</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/file/properties.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/parquet/src/file/properties.rs, line 247; opens the local source file" class="source-link">Writer properties</a></td>
+<td>Independent page, row-group, encoding/compression settings</td>
+</tr>
+</tbody></table></div>
+<p>The nested-layout explanation is a conceptual explanation of Parquet/Arrow representations. The notebook does not claim all encodings or index optimizations are enabled by Comet.</p>
+<h2 id="comet-runtime">Comet runtime</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometSparkSessionExtensions.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometSparkSessionExtensions.scala, line 39; opens the local source file" class="source-link">CometSparkSessionExtensions</a></td>
+<td>AQE/columnar extension ordering and Spark-version distinctions</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometExecRDD.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometExecRDD.scala, line 56; opens the local source file" class="source-link">CometExecRDD</a></td>
+<td>RDD dependencies, partition payloads and input slots</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometExecIterator.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometExecIterator.scala, line 85; opens the local source file" class="source-link">CometExecIterator</a></td>
+<td>Native setup, task context, batch iteration, error conversion and cleanup</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs, line 555; opens the local source file" class="source-link">Native createPlan</a></td>
+<td>Protobuf/config decoding, task memory and native session setup</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs, line 934; opens the local source file" class="source-link">Native output FFI</a></td>
+<td>Arrow export, row count and non-zero-offset copy path</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs, line 1090; opens the local source file" class="source-link">Native executePlan</a></td>
+<td>Stream driving and output lifecycle</td>
+</tr>
+</tbody></table></div>
+<h2 id="memory">Memory</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/java/org/apache/spark/CometTaskMemoryManager.java" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/java/org/apache/spark/CometTaskMemoryManager.java, line 41; opens the local source file" class="source-link">JVM CometTaskMemoryManager</a></td>
+<td>Acquire/release execution budget and no-op native spill callback</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/jni-bridge/src/comet_task_memory_manager.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/jni-bridge/src/comet_task_memory_manager.rs, line 28; opens the local source file" class="source-link">JNI memory bridge</a></td>
+<td>Native calls into JVM acquire/release methods</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/docs/source/user-guide/latest/tuning/memory.md" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/docs/source/user-guide/latest/tuning/memory.md, line 26; opens the local source file" class="source-link">Comet memory explanation</a></td>
+<td>Supporting documentation for tracked reservations versus untracked footprint</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/execution/src/memory_pool/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/execution/src/memory_pool/mod.rs, line 18; opens the local source file" class="source-link">DataFusion memory pool</a></td>
+<td>Consumer, reservation and pool abstraction</td>
+</tr>
+</tbody></table></div>
+<h2 id="spark-scheduling">Spark scheduling</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala, line 2665; opens the local source file" class="source-link">DAGScheduler stage submission</a></td>
+<td>Parent-stage dependencies and scheduling</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala, line 3156; opens the local source file" class="source-link">Task binary and task creation</a></td>
+<td>Shared broadcast task binary and per-partition tasks</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/DAGScheduler.scala, line 3645; opens the local source file" class="source-link">DAGScheduler completion and fetch failures</a></td>
+<td>Task completion, output invalidation and stage recovery</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/TaskSchedulerImpl.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/TaskSchedulerImpl.scala, line 299; opens the local source file" class="source-link">TaskSchedulerImpl</a></td>
+<td>TaskSet submission and resource offers</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/TaskSetManager.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/TaskSetManager.scala, line 992; opens the local source file" class="source-link">TaskSetManager failure handling</a></td>
+<td>Failure classification, counted attempts, pending retries</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/cluster/CoarseGrainedSchedulerBackend.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/scheduler/cluster/CoarseGrainedSchedulerBackend.scala, line 457; opens the local source file" class="source-link">Scheduler backend launch</a></td>
+<td>TaskDescription serialization and LaunchTask message</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/executor/CoarseGrainedExecutorBackend.scala, line 181; opens the local source file" class="source-link">Executor backend</a></td>
+<td>LaunchTask reception and status reporting</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/executor/Executor.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/executor/Executor.scala, line 695; opens the local source file" class="source-link">Executor TaskRunner</a></td>
+<td>Task attempt execution and result/failure lifecycle</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/sql/core/src/main/scala/org/apache/spark/sql/execution/adaptive/AdaptiveSparkPlanExec.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/sql/core/src/main/scala/org/apache/spark/sql/execution/adaptive/AdaptiveSparkPlanExec.scala, line 197; opens the local source file" class="source-link">AdaptiveSparkPlanExec</a></td>
+<td>Query-stage optimization and replanning</td>
+</tr>
+</tbody></table></div>
+<p>The branch-specific <code>PipelinedShuffleDependency</code> paths in this Spark checkout are excluded from the conventional recovery diagrams. Do not treat those experimental paths as the behavior of Comet&#39;s default shuffle.</p>
+<h2 id="spark-networking">Spark networking</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/MapOutputTracker.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/MapOutputTracker.scala, line 678; opens the local source file" class="source-link">MapOutputTracker</a></td>
+<td>Block-location/size lookup and map-output registration</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/network/netty/NettyBlockTransferService.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/network/netty/NettyBlockTransferService.scala, line 119; opens the local source file" class="source-link">NettyBlockTransferService</a></td>
+<td>Block transfer and RetryingBlockTransferor</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/storage/ShuffleBlockFetcherIterator.scala" title="/Users/srajak/Documents/repos/oss/apache/spark/core/src/main/scala/org/apache/spark/storage/ShuffleBlockFetcherIterator.scala, line 1; opens the local source file" class="source-link">ShuffleBlockFetcherIterator</a></td>
+<td>Local/remote fetch handling, in-flight limits and failures</td>
+</tr>
+</tbody></table></div>
+<h2 id="shuffle">Shuffle</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleInputRDD.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleInputRDD.scala, line 34; opens the local source file" class="source-link">CometNativeShuffleInputRDD</a></td>
+<td>Scheduling anchor, dependency preservation, task payload and determinism</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleWriter.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleWriter.scala, line 45; opens the local source file" class="source-link">CometNativeShuffleWriter</a></td>
+<td>Unified native writer plan, local output commit and remote destination</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometBlockStoreShuffleReader.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometBlockStoreShuffleReader.scala, line 39; opens the local source file" class="source-link">CometBlockStoreShuffleReader</a></td>
+<td>Spark fetcher limits, JVM decode path and raw-stream path</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/java/org/apache/comet/CometShuffleBlockIterator.java" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/java/org/apache/comet/CometShuffleBlockIterator.java, line 34; opens the local source file" class="source-link">CometShuffleBlockIterator</a></td>
+<td>Framing, reusable DirectByteBuffer and lifetime contract</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/shuffle_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/shuffle_scan.rs, line 49; opens the local source file" class="source-link">ShuffleScanExec</a></td>
+<td>Native compressed-block pull, decode and thread restrictions</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/writers/shuffle_block_writer.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/writers/shuffle_block_writer.rs, line 65; opens the local source file" class="source-link">ShuffleBlockWriter</a></td>
+<td>Self-contained compressed IPC block format</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/ipc.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/ipc.rs, line 34; opens the local source file" class="source-link">IPC decoder</a></td>
+<td>Schema/dictionary decoding and remote validation option</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometCelebornShuffleMaterialization.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometCelebornShuffleMaterialization.scala, line 38; opens the local source file" class="source-link">Celeborn materialization</a></td>
+<td>Driver-owned destination selection and narrowly scoped local fallback</td>
+</tr>
+</tbody></table></div>
+<h2 id="writes">Writes</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteStrategy.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteStrategy.scala, line 37; opens the local source file" class="source-link">IcebergWriteStrategy</a></td>
+<td>Append/overwrite/ReplaceData interception and two-operator shape</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala, line 168; opens the local source file" class="source-link">Native writer gates</a></td>
+<td>Format, version, type, properties, FileIO and location restrictions</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala, line 175; opens the local source file" class="source-link">CometIcebergWriteExec</a></td>
+<td>Executor-side payload decode, cleanup ownership, metrics and TaskCommit</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 452; opens the local source file" class="source-link">Native Iceberg writer</a></td>
+<td>Writer stack, field IDs, partition routing, close and cleanup</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 883; opens the local source file" class="source-link">Attempt-specific file prefix</a></td>
+<td>Partition/task-attempt/operation naming</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala, line 74; opens the local source file" class="source-link">IcebergCommitExec</a></td>
+<td>Collect completed task messages, commit, abort and known-file cleanup</td>
+</tr>
+</tbody></table></div>
+<h2 id="iceberg-commits">Iceberg commits</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java, line 212; opens the local source file" class="source-link">SparkWrite commit and abort</a></td>
+<td>Branch/WAP targeting, cleanable-failure cleanup and BatchWrite contract</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java, line 296; opens the local source file" class="source-link">SparkWrite append</a></td>
+<td>DataFiles handed to Java append update</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java, line 484; opens the local source file" class="source-link">SnapshotProducer.commit</a></td>
+<td>Bounded conflict retry, TableOperations commit and unknown-outcome protection</td>
+</tr>
+</tbody></table></div>
+<h2 id="datafusion-and-arrow">DataFusion and Arrow</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Entry point</th>
+<th>Evidence</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/execution_plan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/execution_plan.rs, line 67; opens the local source file" class="source-link">ExecutionPlan</a></td>
+<td>Executor-local partition stream contract</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/execution/src/stream.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/execution/src/stream.rs, line 26; opens the local source file" class="source-link">RecordBatchStream</a></td>
+<td>Async stream of RecordBatch results</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/filter.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/filter.rs, line 547; opens the local source file" class="source-link">FilterExec execution</a></td>
+<td>Wrap child partition stream and evaluate predicate</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/aggregates/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/aggregates/mod.rs, line 142; opens the local source file" class="source-link">Aggregate modes</a></td>
+<td>Raw input, intermediate state, partial/final aggregate modes</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/joins/hash_join/exec.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/joins/hash_join/exec.rs, line 257; opens the local source file" class="source-link">Hash join execution</a></td>
+<td>Build/probe execution and partitioning contracts</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/sorts/sort.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion/datafusion/physical-plan/src/sorts/sort.rs, line 95; opens the local source file" class="source-link">External sort</a></td>
+<td>Sorted runs, reservation pressure, spill and merge</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/record_batch.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/record_batch.rs, line 224; opens the local source file" class="source-link">RecordBatch</a></td>
+<td>Schema, arrays and row-count representation</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs" title="/Users/srajak/Documents/repos/oss/apache/arrow-rs/arrow-array/src/ffi.rs, line 237; opens the local source file" class="source-link">Arrow FFI</a></td>
+<td>Export/import C Data interface</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/table/mod.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/table/mod.rs, line 128; opens the local source file" class="source-link">Separate connector TableProvider</a></td>
+<td>Fresh table load, inexact pushdown, append-only insert support</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/physical_plan/scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/physical_plan/scan.rs, line 109; opens the local source file" class="source-link">Separate connector scan</a></td>
+<td>Single unknown output partition and direct table scan stream</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/physical_plan/commit.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-iceberg/crates/datafusion/src/physical_plan/commit.rs, line 188; opens the local source file" class="source-link">Separate connector commit</a></td>
+<td>Collect coalesced file descriptors and commit through Rust transaction/catalog</td>
+</tr>
+</tbody></table></div>
+<h2 id="tests-inspected">Tests inspected</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Test source</th>
+<th>Useful cases</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergNativeSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergNativeSuite.scala, line 561; opens the local source file" class="source-link">CometIcebergNativeSuite</a></td>
+<td>Deletes, shared DVs, page skipping, schemas, DPP, metadata, split ownership and metrics</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergResidualPushdownSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergResidualPushdownSuite.scala, line 1; opens the local source file" class="source-link">CometIcebergResidualPushdownSuite</a></td>
+<td>Predicate conversion correctness</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala, line 493; opens the local source file" class="source-link">CometIcebergWriteActionSuite</a></td>
+<td>Abort, concurrent commit conflict, native engagement and metadata parity</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala, line 929; opens the local source file" class="source-link">MERGE contrasting plan cases</a></td>
+<td>JVM MergeRows can coexist with plan-dependent native file writing</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteDetectionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteDetectionSuite.scala, line 1; opens the local source file" class="source-link">CometIcebergWriteDetectionSuite</a></td>
+<td>Native write eligibility gates</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 1; opens the local source file" class="source-link">CometIcebergRewriteActionSuite</a></td>
+<td>Maintenance scan/write integration</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/CometExecIteratorLifecycleSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/CometExecIteratorLifecycleSuite.scala, line 81; opens the local source file" class="source-link">CometExecIteratorLifecycleSuite</a></td>
+<td>Setup failure, idempotent cleanup and failed teardown</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/comet/PlanDataInjectorShuffleLifecycleSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/comet/PlanDataInjectorShuffleLifecycleSuite.scala, line 103; opens the local source file" class="source-link">PlanDataInjectorShuffleLifecycleSuite</a></td>
+<td>Plan-data reuse and shuffle lifecycle cleanup</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleWriterSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleWriterSuite.scala, line 36; opens the local source file" class="source-link">CometNativeShuffleWriterSuite</a></td>
+<td>Native writer parameter propagation</td>
+</tr>
+</tbody></table></div>
+<p>These are source/test inspections, not newly executed test results. Render and link validation for this documentation is recorded separately in <a href="VALIDATION.html">VALIDATION.md</a>.</p>
+<h2 id="revalidation-procedure">Revalidation procedure</h2>
+<ol>
+<li>Record every relevant checkout HEAD and dirty status again.</li>
+<li>Read Comet&#39;s resolved dependency revisions; do not assume sibling main branches match.</li>
+<li>Recheck scan/write/storage gates before updating capability cells.</li>
+<li>Read the matching Spark shim and Iceberg Spark module for the intended runtime version.</li>
+<li>Confirm native plan engagement and correct results with focused tests or a controlled query.</li>
+<li>Confirm I/O behavior before claiming pruning, and exact failure outcomes before claiming recovery.</li>
+<li>Regenerate diagrams after editing Mermaid and inspect the changed outputs.</li>
+</ol>
+<p>No benchmark speedups or current GitHub issue/PR states are asserted in this collection.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="08-capabilities-and-debugging.html"><small>Previous</small>Capabilities and gaps</a><a href="10-datafusion-and-connector.html"><small>Next</small>DataFusion and connector</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

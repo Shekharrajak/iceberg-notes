@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Failure recovery and cleanup boundaries | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html" aria-current="page"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="07-fault-tolerance.md">Markdown source</a></header><article><h1 id="failure-recovery-and-cleanup-boundaries">Failure recovery and cleanup boundaries</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#recovery-ownership-flow">Recovery ownership flow</a></li>
+<li><a href="#read-task-retry-sequence">Read task retry sequence</a></li>
+<li><a href="#shuffle-loss-sequence">Shuffle loss sequence</a></li>
+<li><a href="#speculation-and-determinism">Speculation and determinism</a></li>
+<li><a href="#write-failure-matrix">Write failure matrix</a></li>
+<li><a href="#publication-outcome-flow">Publication outcome flow</a></li>
+<li><a href="#cancellation-and-memory-failure">Cancellation and memory failure</a></li>
+<li><a href="#what-this-architecture-does-not-promise">What this architecture does not promise</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="08-capabilities-and-debugging.html">Investigation guide</a></p>
+<h2 id="summary">Summary</h2>
+<p>Recovery happens at several layers. A storage or shuffle transport may retry an operation. Spark may retry a task or recompute a shuffle stage. Iceberg may retry a metadata commit. These are different units of replay, with different side effects and limits.</p>
+<p>Native execution does not remove Spark&#39;s retry protocol. It also does not make every failure recoverable. Process crashes, out-of-memory termination, non-retryable errors, exhausted attempts and unknown commit outcomes require distinct treatment.</p>
+<p>Evidence: <a href="09-source-ledger.html#spark-scheduling">Spark scheduling and recovery</a>, <a href="09-source-ledger.html#shuffle">shuffle</a>, <a href="09-source-ledger.html#comet-runtime">native lifecycle</a>, <a href="09-source-ledger.html#iceberg-commits">Iceberg commits</a>.</p>
+<h2 id="recovery-ownership-flow">Recovery ownership flow</h2>
+<figure class="diagram" id="diagram-07-recovery-ownership-flow"><figcaption><span>Recovery ownership flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-07-recovery-ownership-flow" hidden>Actual size</button><a href="diagrams/07-recovery-ownership-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/07-recovery-ownership-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-07-recovery-ownership-flow" tabindex="0" role="region" aria-label="Recovery ownership flow"><img src="diagrams/07-recovery-ownership-flow.svg" width="1717" height="519" alt="Recovery ownership flow"></div></figure>
+<p>Storage retry behavior depends on the selected FileIO/backend and configuration; this diagram does not guarantee a retry for every object-store error. A failed delete-file read is not permission to return undeleted rows.</p>
+<h2 id="read-task-retry-sequence">Read task retry sequence</h2>
+<figure class="diagram" id="diagram-07-read-task-retry-sequence"><figcaption><span>Read task retry sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-07-read-task-retry-sequence" hidden>Actual size</button><a href="diagrams/07-read-task-retry-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/07-read-task-retry-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-07-read-task-retry-sequence" tabindex="0" role="region" aria-label="Read task retry sequence"><img src="diagrams/07-read-task-retry-sequence.svg" width="1278" height="919" alt="Read task retry sequence"></div></figure>
+<p>A normal task retry does not resume from an arbitrary Arrow batch boundary. It re-executes task work according to Spark lineage and its input dependencies. Scanned snapshot/task identity should remain consistent with the planned query. If files for an in-flight snapshot are externally removed, retry cannot manufacture the missing data; retention policy matters.</p>
+<p>Native error conversion returns failures to Spark. A process-level crash may instead be reported as executor loss. Either way, no arbitrary transparent replacement of a partially executed native task with a JVM plan is promised.</p>
+<h2 id="shuffle-loss-sequence">Shuffle loss sequence</h2>
+<figure class="diagram" id="diagram-07-shuffle-loss-sequence"><figcaption><span>Shuffle loss sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-07-shuffle-loss-sequence" hidden>Actual size</button><a href="diagrams/07-shuffle-loss-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/07-shuffle-loss-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-07-shuffle-loss-sequence" tabindex="0" role="region" aria-label="Shuffle loss sequence"><img src="diagrams/07-shuffle-loss-sequence.svg" width="1856" height="729" alt="Shuffle loss sequence"></div></figure>
+<p>The final storage participant represents the currently registered location, which may be a different executor after recomputation. The diagram omits Spark&#39;s internal completion-event hop when recording new MapStatus metadata.</p>
+<p><code>TaskSetManager</code> treats fetch failures differently from ordinary counted task exceptions; <code>DAGScheduler</code> handles upstream output invalidation and stage recovery. Stage retry limits, determinism, executor loss, shuffle preservation services and deployment configuration affect what can be reused. Do not promise that every failed reducer causes exactly one map task to rerun.</p>
+<h2 id="speculation-and-determinism">Speculation and determinism</h2>
+<p>Speculation can run another attempt of slow logical work when enabled and eligible. Spark selects successful task output according to its task/output protocols. This is not evidence that external side effects happened once. Writers need attempt-unique locations and a commit protocol; losing or interrupted attempts can leave cleanup work.</p>
+<p>The Comet Iceberg split writer shares Iceberg&#39;s commit contract and declines a BatchWrite requiring an unsupported commit-coordinator path. Do not claim Spark&#39;s output commit coordinator protects every Iceberg file write. The optional Celeborn native shuffle path has its own explicit authorization checks.</p>
+<p>Repartitioning also interacts with determinism. Replaying unordered input into position-based partition assignment can change output placement; the RDD determinism contract matters for safe shuffle replay. Comet&#39;s native shuffle anchor carries this property rather than hiding it inside Rust.</p>
+<h2 id="write-failure-matrix">Write failure matrix</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Failure point</th>
+<th>Known state</th>
+<th>Expected handling and limit</th>
+</tr>
+</thead><tbody><tr>
+<td>Native input, encode or close fails</td>
+<td>Attempt did not hand off a successful result</td>
+<td>Native guard attempts cleanup of recorded attempt files</td>
+</tr>
+<tr>
+<td>Manifest packaging fails</td>
+<td>Files may exist; task result is not usable</td>
+<td>Native location tracking permits cleanup</td>
+</tr>
+<tr>
+<td>JVM manifest decode or metric rebuild fails</td>
+<td>JVM first took written-location ownership</td>
+<td>Executor JVM attempts cleanup even without decoded DataFiles</td>
+</tr>
+<tr>
+<td>Some tasks finish, then write job fails</td>
+<td>Driver has some completed task messages; no commit attempted</td>
+<td>Comet aborts and attempts cleanup of known completed outputs</td>
+</tr>
+<tr>
+<td>Cleanable commit rejection</td>
+<td>Iceberg knows cleanup is allowed</td>
+<td>Java abort logic can remove uncommitted output</td>
+</tr>
+<tr>
+<td>Commit result unknown</td>
+<td>Publication may already have succeeded</td>
+<td>Preserve potentially committed files; surface uncertainty</td>
+</tr>
+<tr>
+<td>Executor or driver process dies</td>
+<td>In-process cleanup may not execute</td>
+<td>Some files may remain orphaned; recovery depends on surrounding system</td>
+</tr>
+</tbody></table></div>
+<p>The driver explicitly gathers completed messages as tasks finish so a later job failure does not discard all knowledge of their files. This is still bounded knowledge, not a guarantee that every abandoned file is discoverable synchronously.</p>
+<h2 id="publication-outcome-flow">Publication outcome flow</h2>
+<figure class="diagram" id="diagram-07-publication-outcome-flow"><figcaption><span>Publication outcome flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-07-publication-outcome-flow" hidden>Actual size</button><a href="diagrams/07-publication-outcome-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/07-publication-outcome-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-07-publication-outcome-flow" tabindex="0" role="region" aria-label="Publication outcome flow"><img src="diagrams/07-publication-outcome-flow.svg" width="1271" height="452" alt="Publication outcome flow"></div></figure>
+<p>Atomic publication means a partial set of task files is not made visible by gradually appending directory entries to a live table. It does not mean the client always knows whether a commit succeeded. It does not mean the whole Spark application can be replayed without duplicating an append.</p>
+<h2 id="cancellation-and-memory-failure">Cancellation and memory failure</h2>
+<p>Task completion listeners close Comet iterators and native contexts even when a consumer stops early. Idempotent close and independent cleanup steps are important because a metrics/stream close can itself throw. An uncatchable process kill bypasses these guarantees.</p>
+<p>Reservation failure may cause a spill-capable operator to spill; another operator may fail. Container OOM is not the same as a refused reservation: untracked buffers and allocator overhead can exhaust physical memory. Retrying with identical resource pressure may repeat the failure.</p>
+<h2 id="what-this-architecture-does-not-promise">What this architecture does not promise</h2>
+<ul>
+<li>No universal batch-level checkpoint inside a native task.</li>
+<li>No automatic application-driver recovery from Spark task retry alone.</li>
+<li>No general transaction across an external message source and an Iceberg snapshot.</li>
+<li>No synchronous cleanup of every orphan after every crash.</li>
+<li>No unconditional native-to-JVM fallback after a task starts.</li>
+<li>No guarantee a catalog commit conflict is harmless or retryable for every operation.</li>
+</ul>
+<p>Test evidence includes Comet iterator lifecycle failures, Iceberg write-job abort and commit-conflict cases, shuffle lifecycle/cache cleanup, and native scan delete-stat failure. The notebook does not claim a newly executed failure-injection campaign.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="06-iceberg-write.html"><small>Previous</small>Writes and commits</a><a href="08-capabilities-and-debugging.html"><small>Next</small>Capabilities and gaps</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

@@ -1,0 +1,24 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":33,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph ICE["Iceberg transaction"]
+    C["Attempt metadata publication"]
+    R{"Observed outcome"}
+    OK["Committed snapshot"]
+    RE["Refresh and retry<br/>only allowed conflicts"]
+    NO["Known failure<br/>cleanup only when allowed"]
+    UN["Unknown outcome<br/>do not assume files are orphaned"]
+    C --> R
+    R -- "success" --> OK
+    R -- "retryable conflict" --> RE
+    RE --> C
+    R -- "definite terminal failure" --> NO
+    R -- "uncertain" --> UN
+  end
+  subgraph OPS["Operational follow-up"]
+    CHECK["Inspect authoritative table state<br/>and application outcome"]
+    UN --> CHECK
+  end
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  class C,R,OK,RE,NO,UN ice
+  class CHECK spark

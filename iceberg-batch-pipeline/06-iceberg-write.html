@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iceberg file writing and snapshot publication | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html" aria-current="page"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="06-iceberg-write.md">Markdown source</a></header><article><h1 id="iceberg-file-writing-and-snapshot-publication">Iceberg file writing and snapshot publication</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#write-component-flow">Write component flow</a></li>
+<li><a href="#native-file-writer-stack">Native file writer stack</a></li>
+<li><a href="#executor-handoff-sequence">Executor handoff sequence</a></li>
+<li><a href="#driver-commit-sequence">Driver commit sequence</a></li>
+<li><a href="#dml-coverage-is-plan-dependent">DML coverage is plan dependent</a></li>
+<li><a href="#maintenance-distinctions">Maintenance distinctions</a></li>
+<li><a href="#failure-boundary-reminders">Failure boundary reminders</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="07-fault-tolerance.html">Fault tolerance</a></p>
+<h2 id="summary">Summary</h2>
+<p>Native file production is an executor operation. Table publication is a driver-coordinated Iceberg Java operation. This split permits parallel native data-file writing without replacing Iceberg&#39;s commit authority.</p>
+<p>Both write flags are off by default in the checked Comet source. The native writer is eligibility-gated and experimental. Read support for v3 deletion vectors does not imply native v3 writing.</p>
+<p>Evidence: <a href="09-source-ledger.html#writes">write strategy and bridge</a>, <a href="09-source-ledger.html#iceberg-commits">commit semantics</a>, <a href="08-capabilities-and-debugging.html">capabilities</a>.</p>
+<h2 id="write-component-flow">Write component flow</h2>
+<figure class="diagram" id="diagram-06-write-component-flow"><figcaption><span>Write component flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-06-write-component-flow" hidden>Actual size</button><a href="diagrams/06-write-component-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/06-write-component-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-06-write-component-flow" tabindex="0" role="region" aria-label="Write component flow"><img src="diagrams/06-write-component-flow.svg" width="2487" height="328" alt="Write component flow"></div></figure>
+<p>The JVM writer already produces normal TaskCommit data; only native output needs the manifest-decoding/metrics-rebuild portion of the reconciliation box.</p>
+<p>The split strategy keeps the committer outside the AQE-replanned writer subtree and shares one <code>BatchWrite</code> object across planning/execution. Recreating unrelated BatchWrite instances would lose the validation context. The strategy declines writers requiring Spark&#39;s commit coordinator; the checked Iceberg <code>SparkWrite</code> reports that it does not require that coordinator.</p>
+<h2 id="native-file-writer-stack">Native file writer stack</h2>
+<pre><code>Arrow input -&gt; schema and field-ID alignment -&gt; unpartitioned, fanout or clustered writer -&gt; DataFile writer -&gt; rolling file writer -&gt; Parquet writer</code></pre>
+<ul>
+<li><strong>Unpartitioned</strong> routes all rows to the table&#39;s unpartitioned file stream.</li>
+<li><strong>Clustered</strong> relies on required partition clustering; revisiting a closed partition can be an error. Spark distribution/sort requirements matter.</li>
+<li><strong>Fanout</strong> permits unsorted partitioned input by keeping partition writers active; many distinct partitions can increase resource use.</li>
+<li><strong>Rolling</strong> separates the target file size from Parquet row-group/page targets.</li>
+<li><strong>Schema alignment</strong> stamps Iceberg field IDs and enforces compatible Arrow/Parquet types.</li>
+<li><strong>Naming</strong> includes partition/task-attempt/operation identity so retried attempts do not overwrite the same output blindly.</li>
+</ul>
+<p>The native writer records every generated location. Its abort guard can clean known files if input, encoding, close or payload assembly fails. Cleanup remains best effort; process death cannot be assumed to run a destructor.</p>
+<h2 id="executor-handoff-sequence">Executor handoff sequence</h2>
+<figure class="diagram" id="diagram-06-executor-handoff-sequence"><figcaption><span>Executor handoff sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-06-executor-handoff-sequence" hidden>Actual size</button><a href="diagrams/06-executor-handoff-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/06-executor-handoff-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-06-executor-handoff-sequence" tabindex="0" role="region" aria-label="Executor handoff sequence"><img src="diagrams/06-executor-handoff-sequence.svg" width="1648" height="784" alt="Executor handoff sequence"></div></figure>
+<p>The native result is one row containing two binary payloads. The Avro manifest is an in-memory transport envelope, not the manifest list of an independently committed snapshot. The separate locations payload allows cleanup even if manifest decoding fails.</p>
+<p>The executor JVM rebuilds Iceberg metrics using Java footer/metrics logic, reconciles native floating-point bounds/NaN information where needed, and restores sort-order metadata. This work is part of compatibility and performance cost. Do not describe the writer as a wholly JVM-free path.</p>
+<h2 id="driver-commit-sequence">Driver commit sequence</h2>
+<figure class="diagram" id="diagram-06-driver-commit-sequence"><figcaption><span>Driver commit sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-06-driver-commit-sequence" hidden>Actual size</button><a href="diagrams/06-driver-commit-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/06-driver-commit-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-06-driver-commit-sequence" tabindex="0" role="region" aria-label="Driver commit sequence"><img src="diagrams/06-driver-commit-sequence.svg" width="1854" height="1072" alt="Driver commit sequence"></div></figure>
+<p>The retry branch summarizes Iceberg&#39;s internal retry policy; a validation failure need not be retryable, and the diagram does not promise eventual success. <code>TableOperations.commit(base, updated)</code> is the publication boundary; catalogs implement the atomic update using their own mechanisms. New object creation alone does not publish table rows.</p>
+<p>For an ordinary commit, readers resolving the updated table reference see the new snapshot; already planned scans remain bound to their selected state. Branch targets and write-audit-publish can deliberately publish to a branch or stage a snapshot without moving the default current snapshot.</p>
+<h2 id="dml-coverage-is-plan-dependent">DML coverage is plan dependent</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Operation</th>
+<th>Important qualification</th>
+</tr>
+</thead><tbody><tr>
+<td>Append</td>
+<td>Eligible native file writing, Java append commit</td>
+</tr>
+<tr>
+<td>Static or dynamic overwrite</td>
+<td>Native files where eligible, Java overwrite validation/publication</td>
+</tr>
+<tr>
+<td>Copy-on-write DELETE/UPDATE</td>
+<td>Rewritten data files can use the native writer</td>
+</tr>
+<tr>
+<td>Copy-on-write MERGE</td>
+<td>JVM MergeRows logic remains; native file writing can still engage after a suitable exchange</td>
+</tr>
+<tr>
+<td>Merge-on-read WriteDelta</td>
+<td>Not intercepted by this split native-write strategy</td>
+</tr>
+<tr>
+<td>CTAS/RTAS</td>
+<td>Tests cover native inner append/write paths; table creation/replacement control remains Java/Spark</td>
+</tr>
+</tbody></table></div>
+<p>The unpartitioned MERGE test expects the JVM two-operator writer path; the partitioned no-AQE test can get a native writer because a Comet exchange provides an eligible native child above JVM <code>MergeRowsExec</code>. Neither proves a native implementation of MergeRows itself.</p>
+<h2 id="maintenance-distinctions">Maintenance distinctions</h2>
+<p><code>rewrite_data_files</code> reads and rewrites data. Its staged scan tasks can enter Comet&#39;s recognized <code>SparkStagedScan</code> path, followed by eligible native operators and writer. Iceberg chooses rewrite groups and publishes replacements. A maintenance action can have several group jobs or commits depending on its options; do not generalize one query commit into one commit for every maintenance invocation.</p>
+<p><code>rewrite_manifests</code> primarily reorganizes metadata. <code>expire_snapshots</code> changes retained table history and can delete no-longer-needed files. <code>remove_orphan_files</code> is lifecycle housekeeping, not a normal transaction commit step. <code>rewrite_position_delete_files</code> rewrites delete artifacts and is not merely metadata-only work; native data-file writer support does not cover it automatically.</p>
+<h2 id="failure-boundary-reminders">Failure boundary reminders</h2>
+<ul>
+<li>Task success is not snapshot success.</li>
+<li>A task retry can write different physical files for the same logical work.</li>
+<li>Driver commit retries do not necessarily require rerunning every writer task.</li>
+<li>Unknown publication outcome must be distinguished from known rejection.</li>
+<li>Cleanup is best effort, and later orphan maintenance may be needed.</li>
+<li>None of this establishes application-level exactly-once ingestion from an external source; that needs an additional end-to-end protocol.</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="05-distributed-execution.html"><small>Previous</small>Distributed execution</a><a href="07-fault-tolerance.html"><small>Next</small>Fault tolerance</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

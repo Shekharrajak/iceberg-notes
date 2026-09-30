@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Executor JVM
+    participant W as CometIcebergWriteExec
+    participant J as Iceberg metadata bridge
+  end
+  box rgb(237, 233, 254) Native writer
+    participant N as IcebergWriteExec
+  end
+  box rgb(241, 245, 249) Storage
+    participant O as Data files
+  end
+  box rgb(254, 249, 195) Driver
+    participant C as IcebergCommitExec
+  end
+  W->>N: Supply Arrow stream and resolved write configuration
+  loop Input and output files
+    N->>O: Encode and write partitioned Parquet output
+  end
+  N->>N: Close files and encode DataFile transport manifest
+  N-->>W: Return manifest bytes and written-location bytes
+  W->>W: Take cleanup ownership of locations first
+  W->>J: Decode DataFiles and rebuild compatible metrics
+  J->>O: Read footer information required for metrics
+  O-->>J: Return footer data
+  J-->>W: Return DataFiles and TaskCommit
+  W-->>C: Return serialized WriterCommitMessage

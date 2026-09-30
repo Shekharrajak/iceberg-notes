@@ -1,0 +1,33 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":50},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DRIVER["Spark driver"]
+    SQL["SQL and Catalyst"]
+    IP["Iceberg Java scan planning"]
+    CR{"Comet eligibility"}
+    S["Stages and task scheduling"]
+    SQL --> IP --> CR --> S
+  end
+  subgraph EXEC["Spark executors"]
+    N["Comet native scan and operators"]
+    J["Spark and Iceberg JVM work"]
+    X["Spark exchange boundaries"]
+    S -- "task attempts" --> N
+    S -- "fallback tasks or regions" --> J
+    N --> X
+    J --> X
+  end
+  subgraph STORE["Table storage"]
+    M[("Metadata and manifests")]
+    D[("Data and delete files")]
+  end
+  M --> IP
+  D --> N
+  D --> J
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef iceberg fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  class SQL,CR,S,J,X spark
+  class IP iceberg
+  class N native
+  class M,D store

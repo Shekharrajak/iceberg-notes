@@ -1,0 +1,109 @@
+{
+  "markedVersion": "4.3.0",
+  "pages": [
+    {
+      "source": "README.md",
+      "html": "index.html",
+      "title": "Iceberg batch pipeline source notebook",
+      "headings": 6,
+      "diagrams": 0,
+      "sha256": "852df5d5da59dc4ac12deba549ff68307fcda857e30e8800d624467e177ef77d"
+    },
+    {
+      "source": "01-system-architecture.md",
+      "html": "01-system-architecture.html",
+      "title": "System architecture and ownership",
+      "headings": 8,
+      "diagrams": 2,
+      "sha256": "a5bf0d689769e23ec2576515f306920095f3d9cfefb85cf7b547e0ec4fa9ed24"
+    },
+    {
+      "source": "02-iceberg-scan.md",
+      "html": "02-iceberg-scan.html",
+      "title": "Iceberg scan planning and native reading",
+      "headings": 10,
+      "diagrams": 3,
+      "sha256": "daecbaeb0d427b705639123680ece9dc24e8216eba643308776274419b5466aa"
+    },
+    {
+      "source": "03-parquet.md",
+      "html": "03-parquet.html",
+      "title": "Parquet layout and batch processing",
+      "headings": 10,
+      "diagrams": 4,
+      "sha256": "5294a523c08e11326ca636845317ced53446f01bb5950ec0bdb5061f0683379f"
+    },
+    {
+      "source": "04-native-runtime-and-serde.md",
+      "html": "04-native-runtime-and-serde.html",
+      "title": "Native execution serialization and memory",
+      "headings": 8,
+      "diagrams": 3,
+      "sha256": "b07c1700aabb6f360b9924257efe092b44d7e9082c76e64064e6f938615b4f19"
+    },
+    {
+      "source": "05-distributed-execution.md",
+      "html": "05-distributed-execution.html",
+      "title": "Distributed scheduling networking and shuffle",
+      "headings": 12,
+      "diagrams": 5,
+      "sha256": "794e43147d49ca3d484a346fd8df34a9edddd9838ac12275ce255738e71be9c7"
+    },
+    {
+      "source": "06-iceberg-write.md",
+      "html": "06-iceberg-write.html",
+      "title": "Iceberg file writing and snapshot publication",
+      "headings": 9,
+      "diagrams": 3,
+      "sha256": "6145130e4a3c8304c821632b8b18ebcd7141a5e3f8b64aa3024d173482943a2b"
+    },
+    {
+      "source": "07-fault-tolerance.md",
+      "html": "07-fault-tolerance.html",
+      "title": "Failure recovery and cleanup boundaries",
+      "headings": 10,
+      "diagrams": 4,
+      "sha256": "a3a0daaa5cd24f525ec5319988f91d046361cf1dfb515449042d76c2be51995d"
+    },
+    {
+      "source": "08-capabilities-and-debugging.md",
+      "html": "08-capabilities-and-debugging.html",
+      "title": "Native capabilities gaps and investigation guide",
+      "headings": 9,
+      "diagrams": 1,
+      "sha256": "34b91ad90c982d9230cc3916a96b094eabc587ec7486a9264ef6528903ae5575"
+    },
+    {
+      "source": "09-source-ledger.md",
+      "html": "09-source-ledger.html",
+      "title": "Source revisions evidence and validation limits",
+      "headings": 16,
+      "diagrams": 0,
+      "sha256": "fb0f75213f320c315e934d0cf4554a2a0379c3587aa735d52717a1295c2a7c53"
+    },
+    {
+      "source": "10-datafusion-and-connector.md",
+      "html": "10-datafusion-and-connector.html",
+      "title": "DataFusion operators and standalone Iceberg integration",
+      "headings": 8,
+      "diagrams": 4,
+      "sha256": "826618659ff620e693bc734dce10c37d02708adb99d620d67e1562ff5520e6af"
+    },
+    {
+      "source": "VALIDATION.md",
+      "html": "VALIDATION.html",
+      "title": "Documentation validation",
+      "headings": 2,
+      "diagrams": 0,
+      "sha256": "f7bef46307d958338182a1dbe0adbf6b1d600b45db6a67ff424b8ca2c9f579da"
+    },
+    {
+      "source": "scripts/README.md",
+      "html": "scripts/README.html",
+      "title": "Diagram rendering and validation",
+      "headings": 6,
+      "diagrams": 0,
+      "sha256": "08c711132d431be2aae7a8db66a0b1ac5643f053a0c4c28995d3392a76fcb5e6"
+    }
+  ]
+}

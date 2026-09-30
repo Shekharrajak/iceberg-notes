@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DataFusion operators and standalone Iceberg integration | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html" aria-current="page"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="10-datafusion-and-connector.md">Markdown source</a></header><article><h1 id="datafusion-operators-and-standalone-iceberg-integration">DataFusion operators and standalone Iceberg integration</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#native-operator-data-flow">Native operator data flow</a></li>
+<li><a href="#stream-execution-sequence">Stream execution sequence</a></li>
+<li><a href="#operator-behavior-and-state">Operator behavior and state</a></li>
+<li><a href="#standalone-connector-flow">Standalone connector flow</a></li>
+<li><a href="#standalone-connector-append-sequence">Standalone connector append sequence</a></li>
+<li><a href="#questions-for-integration-work">Questions for integration work</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="04-native-runtime-and-serde.html">Native runtime</a></p>
+<h2 id="summary">Summary</h2>
+<p>Within Comet, a DataFusion physical plan is an executor-local computation over Arrow streams. Spark supplies distributed placement and exchange coordination. The standalone datafusion-iceberg connector starts at a different boundary: a DataFusion TableProvider owns table loading, scan construction and its own supported append commit path.</p>
+<p>Evidence: <a href="09-source-ledger.html#datafusion-and-arrow">DataFusion and Arrow sources</a>. These sibling sources illustrate contracts; Comet&#39;s pinned dependency and native planner must be checked before transferring a particular operator capability.</p>
+<h2 id="native-operator-data-flow">Native operator data flow</h2>
+<figure class="diagram" id="diagram-10-native-operator-data-flow"><figcaption><span>Native operator data flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-10-native-operator-data-flow" hidden>Actual size</button><a href="diagrams/10-native-operator-data-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/10-native-operator-data-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-10-native-operator-data-flow" tabindex="0" role="region" aria-label="Native operator data flow"><img src="diagrams/10-native-operator-data-flow.svg" width="2066" height="148" alt="Native operator data flow"></div></figure>
+<p>This is an illustrative eligible grouped aggregate, not a universal plan. Comet serializes aggregate modes and expressions from Spark&#39;s chosen plan. The intermediate rows may contain aggregate state, not final SQL values. For example, a distributed AVG requires enough state to merge sums and counts; averaging per-task averages is generally wrong.</p>
+<h2 id="stream-execution-sequence">Stream execution sequence</h2>
+<figure class="diagram" id="diagram-10-stream-execution-sequence"><figcaption><span>Stream execution sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-10-stream-execution-sequence" hidden>Actual size</button><a href="diagrams/10-stream-execution-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/10-stream-execution-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-10-stream-execution-sequence" tabindex="0" role="region" aria-label="Stream execution sequence"><img src="diagrams/10-stream-execution-sequence.svg" width="1241" height="799" alt="Stream execution sequence"></div></figure>
+<p>This is a conceptual poll/wakeup trace, not a separate OS thread per operator. <code>ExecutionPlan.execute</code> returns a stream for a partition. Operators wrap child streams or create stateful streams; asynchronous readiness and operator state determine when they can produce output. Comet&#39;s bridge drives the root and manages any required JVM inputs.</p>
+<h2 id="operator-behavior-and-state">Operator behavior and state</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Operator family</th>
+<th>Typical local work</th>
+<th>State and boundary</th>
+</tr>
+</thead><tbody><tr>
+<td>Projection</td>
+<td>Evaluate expressions and select/reorder columns</td>
+<td>Some arrays can be referenced; computed expressions allocate</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>Evaluate boolean mask and retain selected rows</td>
+<td>Null semantics matter; output batches may be coalesced</td>
+</tr>
+<tr>
+<td>Hash aggregate</td>
+<td>Map group keys to accumulator state</td>
+<td>Cardinality drives memory; partial/final modes must agree</td>
+</tr>
+<tr>
+<td>Hash join</td>
+<td>Build lookup state, probe matching rows, apply join semantics</td>
+<td>Build side, null handling, duplicate keys and outer/semi/anti behavior matter</td>
+</tr>
+<tr>
+<td>Sort</td>
+<td>Buffer/sort runs and merge output</td>
+<td>Spill-capable paths write/read local temporary data</td>
+</tr>
+<tr>
+<td>Limit</td>
+<td>Stop after required output</td>
+<td>Upstream resource cleanup still needed when not exhausted</td>
+</tr>
+<tr>
+<td>Shuffle writer</td>
+<td>Route rows and encode partitioned blocks</td>
+<td>It creates the cross-task boundary coordinated by Spark</td>
+</tr>
+</tbody></table></div>
+<p>A hash join&#39;s build side can delay output until sufficient build state exists. A sort often consumes substantial input before ordered output. Incremental streams therefore do not imply all operators are stateless or nonblocking. Spill behavior is operator- and version-specific, not a blanket feature of every ExecutionPlan.</p>
+<p>Plan properties communicate partitioning, ordering and other guarantees. A wrong property can make an optimizer remove a necessary repartition or sort. Correct batches alone are not sufficient; an integration must communicate truthful properties as well.</p>
+<h2 id="standalone-connector-flow">Standalone connector flow</h2>
+<figure class="diagram" id="diagram-10-standalone-connector-flow"><figcaption><span>Standalone connector flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-10-standalone-connector-flow" hidden>Actual size</button><a href="diagrams/10-standalone-connector-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/10-standalone-connector-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-10-standalone-connector-flow" tabindex="0" role="region" aria-label="Standalone connector flow"><img src="diagrams/10-standalone-connector-flow.svg" width="1630" height="411" alt="Standalone connector flow"></div></figure>
+<p>The connector reports filter pushdown as <code>Inexact</code>, so an exact engine filter remains where required. The catalog-backed provider reloads the table on scan and uses the current snapshot; the static provider supports a cached read-only table/snapshot view. The scan advertises <code>UnknownPartitioning(1)</code> in this checkout. That is one DataFusion output partition, not necessarily one data file or no internal read concurrency.</p>
+<h2 id="standalone-connector-append-sequence">Standalone connector append sequence</h2>
+<figure class="diagram" id="diagram-10-standalone-connector-append-sequence"><figcaption><span>Standalone connector append sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-10-standalone-connector-append-sequence" hidden>Actual size</button><a href="diagrams/10-standalone-connector-append-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/10-standalone-connector-append-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-10-standalone-connector-append-sequence" tabindex="0" role="region" aria-label="Standalone connector append sequence"><img src="diagrams/10-standalone-connector-append-sequence.svg" width="1515" height="821" alt="Standalone connector append sequence"></div></figure>
+<p>This connector path does not use Comet&#39;s JVM TaskCommit compatibility bridge or Spark&#39;s scheduler. DataFusion partitioned execution alone does not install a distributed cluster runtime. Comet and the standalone connector can share lower-level libraries while having different planning, scheduling and transaction integration.</p>
+<h2 id="questions-for-integration-work">Questions for integration work</h2>
+<ul>
+<li>Is the feature in the library, the connector, Comet&#39;s serializer, or the Spark-facing contract?</li>
+<li>Does the native expression match Spark&#39;s type coercion, null, overflow and error semantics?</li>
+<li>Does the operator expose truthful ordering and distribution properties?</li>
+<li>Is state reserved and spill behavior defined for this particular operator?</li>
+<li>Are Arrow buffers still valid when the downstream consumer uses them?</li>
+<li>Is a claimed speedup measured across the whole distributed boundary or just a local kernel?</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="09-source-ledger.html"><small>Previous</small>Source ledger</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

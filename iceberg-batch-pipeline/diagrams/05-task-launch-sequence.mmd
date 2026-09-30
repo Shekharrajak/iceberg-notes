@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark driver
+    participant D as DAGScheduler
+    participant T as TaskScheduler and TaskSetManager
+    participant B as Scheduler backend
+  end
+  box rgb(220, 252, 231) Spark executor
+    participant E as Executor backend
+    participant R as TaskRunner
+  end
+  box rgb(237, 233, 254) Native work
+    participant C as Comet execution context
+  end
+  D->>D: Resolve parent stages and missing partitions
+  D->>D: Broadcast task binary and attach partition payload
+  D->>T: Submit TaskSet
+  B->>T: Offer available executor resources
+  T-->>B: Return selected task descriptions
+  B->>E: Send LaunchTask
+  E->>R: Launch task attempt
+  R->>C: Run Comet RDD compute and native iterator
+  C-->>R: Produce result or shuffle map output
+  R-->>E: Report completion or failure
+  E-->>B: Send status update
+  B-->>T: Process task state
+  T-->>D: Report completion event

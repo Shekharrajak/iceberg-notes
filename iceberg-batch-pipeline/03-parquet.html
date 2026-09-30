@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Parquet layout and batch processing | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html" aria-current="page"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="03-parquet.md">Markdown source</a></header><article><h1 id="parquet-layout-and-batch-processing">Parquet layout and batch processing</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#physical-layout">Physical layout</a></li>
+<li><a href="#read-request-sequence">Read request sequence</a></li>
+<li><a href="#pruning-ladder">Pruning ladder</a></li>
+<li><a href="#java-and-rust-paths-are-not-identical">Java and Rust paths are not identical</a></li>
+<li><a href="#nested-values-and-field-identity">Nested values and field identity</a></li>
+<li><a href="#write-layout-flow">Write layout flow</a></li>
+<li><a href="#write-and-rollover-sequence">Write and rollover sequence</a></li>
+<li><a href="#performance-reasoning">Performance reasoning</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="04-native-runtime-and-serde.html">Native runtime</a></p>
+<h2 id="summary">Summary</h2>
+<p>Parquet determines how a file stores columns. Iceberg determines which files belong to a table state. A reader chooses byte ranges, decodes the necessary pages, reconstructs nested values, and produces batches. An Arrow batch is an output-memory unit, not an on-disk Parquet unit.</p>
+<p>Evidence: <a href="09-source-ledger.html#parquet">Parquet sources</a>, <a href="09-source-ledger.html#iceberg-rust-reader">pinned native reader</a>, <a href="09-source-ledger.html#datafusion-and-arrow">Arrow arrays</a>.</p>
+<h2 id="physical-layout">Physical layout</h2>
+<figure class="diagram" id="diagram-03-physical-layout"><figcaption><span>Physical layout</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-03-physical-layout" hidden>Actual size</button><a href="diagrams/03-physical-layout.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/03-physical-layout.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-03-physical-layout" tabindex="0" role="region" aria-label="Physical layout"><img src="diagrams/03-physical-layout.svg" width="1774" height="381" alt="Physical layout"></div></figure>
+<p>This is a containment diagram, not a literal byte-offset drawing. Footer metadata describes row groups and column chunks and can point to optional indexes. Index and bloom contents are not all embedded directly in every row-group statistics object.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Concept</th>
+<th>Purpose</th>
+<th>Consequence for a reader</th>
+</tr>
+</thead><tbody><tr>
+<td>Row group</td>
+<td>Column chunks covering a common logical row range</td>
+<td>A unit for statistics-based skipping and reader work</td>
+</tr>
+<tr>
+<td>Column chunk</td>
+<td>Encoded physical leaf column for one row group</td>
+<td>Projection can avoid unrelated chunks</td>
+</tr>
+<tr>
+<td>Data page</td>
+<td>Encoded values and, as required, repetition/definition levels</td>
+<td>Decompression/decoding work; not automatically a result batch</td>
+</tr>
+<tr>
+<td>Dictionary page</td>
+<td>Values referred to by dictionary indices</td>
+<td>Dictionary encoding is not the same as an Arrow dictionary array</td>
+</tr>
+<tr>
+<td>Definition levels</td>
+<td>Represent optional/nested presence</td>
+<td>Distinguish missing parents, null values and empty containers</td>
+</tr>
+<tr>
+<td>Repetition levels</td>
+<td>Represent repeated/nested structure</td>
+<td>Reconstruct lists and nested row boundaries</td>
+</tr>
+<tr>
+<td>Column index</td>
+<td>Page-level statistics</td>
+<td>Can establish non-matching pages</td>
+</tr>
+<tr>
+<td>Offset index</td>
+<td>Page offsets and row-position information</td>
+<td>Helps turn selected rows/pages into byte-range reads</td>
+</tr>
+<tr>
+<td>Bloom filter</td>
+<td>Probabilistic membership summary</td>
+<td>Can prove absence; a possible match is not proof of presence</td>
+</tr>
+<tr>
+<td>Footer statistics</td>
+<td>Row-group/column metadata and bounds</td>
+<td>Pruning must handle missing/truncated/ambiguous statistics conservatively</td>
+</tr>
+</tbody></table></div>
+<p>Encoding and compression are separate. Dictionary, RLE/bit-packing and delta encodings exploit value structure; codecs such as Snappy or Zstd compress encoded page payloads. Exact available encodings depend on physical type and writer configuration.</p>
+<h2 id="read-request-sequence">Read request sequence</h2>
+<figure class="diagram" id="diagram-03-read-request-sequence"><figcaption><span>Read request sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-03-read-request-sequence" hidden>Actual size</button><a href="diagrams/03-read-request-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/03-read-request-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-03-read-request-sequence" tabindex="0" role="region" aria-label="Read request sequence"><img src="diagrams/03-read-request-sequence.svg" width="1274" height="982" alt="Read request sequence"></div></figure>
+<p>This is logical dependency order. The implementation buffers, overlaps and sometimes widens range requests. It is not a claim of one HTTP request per page. <code>ArrowFileReader.get_byte_ranges</code> merges nearby ranges and fetches merged ranges with bounded concurrency. Comet supplies a 512 KiB metadata prefetch hint; that is not a guaranteed footer size or fixed amount read for every file.</p>
+<h2 id="pruning-ladder">Pruning ladder</h2>
+<pre><code>Table metadata: partition and manifest summaries -&gt; file statistics -&gt; candidate FileScanTasks
+File metadata: split ownership and row-group statistics -&gt; page selection -&gt; projected decoding
+Rows: reader predicates and deletes -&gt; remaining exact engine predicates -&gt; relational operators</code></pre>
+<p>The explicit native composition is useful:</p>
+<ul>
+<li>Intersect task byte-range ownership with predicate-selected row groups.</li>
+<li>Build row selections from page indexes where the predicate/type supports them.</li>
+<li>Intersect with positions retained after position deletes or deletion vectors.</li>
+<li>Install the combined scan/equality-delete row filter.</li>
+<li>Decode only what the selected reader plan needs, then adapt the batch.</li>
+</ul>
+<p>Predicate pushdown can still have residual work. Missing statistics or indexes reduce pruning opportunities; they must not cause false-negative row elimination.</p>
+<p>The pinned reader&#39;s <code>RowSelection</code> is relative to selected row groups, while <code>_pos</code> and position deletes refer to original file positions. Mixing these coordinate systems is a correctness bug. File splitting must assign row groups consistently so adjacent byte ranges do not both return a row group. The Comet suite explicitly checks that boundary.</p>
+<h2 id="java-and-rust-paths-are-not-identical">Java and Rust paths are not identical</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Path</th>
+<th>Source-backed observation</th>
+</tr>
+</thead><tbody><tr>
+<td>Iceberg Java <code>ReadConf</code></td>
+<td>Explicit row-group statistics, dictionary and bloom tests</td>
+</tr>
+<tr>
+<td>Comet Iceberg Rust reader</td>
+<td>Row-group filtering plus enabled page-index row selection</td>
+</tr>
+<tr>
+<td>Pinned Iceberg Rust bloom support</td>
+<td>Exists, but defaults off; Comet does not enable it in this scan builder</td>
+</tr>
+<tr>
+<td>DataFusion generic Parquet datasource</td>
+<td>Separate integration; its options do not automatically configure Comet&#39;s custom Iceberg scan</td>
+</tr>
+</tbody></table></div>
+<p>The fact that one path can skip pages says nothing about whether a particular query/file/type combination did so. The integration test for single-row-group page skipping is stronger evidence than a filtered result alone because it checks read behavior.</p>
+<h2 id="nested-values-and-field-identity">Nested values and field identity</h2>
+<p>An Arrow list uses offsets into a child array plus validity; a struct has children and parent validity; a variable-length string/binary array uses offsets plus value bytes. Parquet uses physical leaves and repetition/definition levels. The reader reconstructs the logical shape.</p>
+<p>Consequently, a null struct is not equivalent to a present struct whose children are null. A null list is not an empty list. Schema projection must preserve these distinctions. Native support for a struct column does not prove nested-field predicate pushdown, nor does it prove that an entire container can be used as an equality-delete key.</p>
+<p>Field IDs connect the Parquet schema to Iceberg columns. When IDs are absent, the reader may use a name mapping or compatibility fallback IDs. A rename must not be implemented as blindly selecting the new column name from an old file.</p>
+<h2 id="write-layout-flow">Write layout flow</h2>
+<figure class="diagram" id="diagram-03-write-layout-flow"><figcaption><span>Write layout flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-03-write-layout-flow" hidden>Actual size</button><a href="diagrams/03-write-layout-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/03-write-layout-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-03-write-layout-flow" tabindex="0" role="region" aria-label="Write layout flow"><img src="diagrams/03-write-layout-flow.svg" width="2180" height="148" alt="Write layout flow"></div></figure>
+<h2 id="write-and-rollover-sequence">Write and rollover sequence</h2>
+<figure class="diagram" id="diagram-03-write-and-rollover-sequence"><figcaption><span>Write and rollover sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-03-write-and-rollover-sequence" hidden>Actual size</button><a href="diagrams/03-write-and-rollover-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/03-write-and-rollover-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-03-write-and-rollover-sequence" tabindex="0" role="region" aria-label="Write and rollover sequence"><img src="diagrams/03-write-and-rollover-sequence.svg" width="1201" height="864" alt="Write and rollover sequence"></div></figure>
+<p>The row-group threshold, page target, target data-file size, task split size and Arrow batch size are independent controls. Target file size is approximate: buffering, compression, row size and check cadence cause overshoot. Comet&#39;s writer paces rows to match the Java rolling writer&#39;s 1000-row check cadence; this does not make output files byte-identical.</p>
+<h2 id="performance-reasoning">Performance reasoning</h2>
+<p>Illustrative tradeoffs, not measured results:</p>
+<ul>
+<li>Many tiny files increase footer, open, planning and task overhead.</li>
+<li>Larger row groups can improve compression and throughput but make row-group pruning coarser.</li>
+<li>Page indexes offer a finer skipping opportunity but also cost metadata and requests.</li>
+<li>Range coalescing trades fewer requests for reading gaps between useful ranges.</li>
+<li>Larger batches amortize per-batch work but increase working memory and may delay first output.</li>
+<li>Stronger compression trades CPU for storage/network bytes.</li>
+<li>Sorted layouts can tighten bounds; unsorted values can make min/max broad and unhelpful.</li>
+<li><code>COUNT(*)</code> may be answered by Java metadata aggregate pushdown. If an empty projection reaches the pinned native reader, its current fallback can read all columns to preserve row counts. Do not assume every count is metadata-only or every count is a full data scan.</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="02-iceberg-scan.html"><small>Previous</small>Iceberg scans</a><a href="04-native-runtime-and-serde.html"><small>Next</small>Runtime and serialization</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

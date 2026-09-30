@@ -1,0 +1,29 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph COMET["Comet native"]
+    P["Decode task pools"]
+    IO["Create or reuse FileIO"]
+    STAT["Stat unique Parquet delete files"]
+    P --> IO --> STAT
+  end
+  subgraph READER["Iceberg Rust"]
+    OPEN["Read footer and resolve field IDs"]
+    RG["Select row groups by range and statistics"]
+    SEL["Intersect page and position-delete selections"]
+    DEC["Decode and evaluate row predicates"]
+    ADAPT["Schema promotion, constants,<br/>column order and metadata"]
+    DEL["Load deletes"]
+    STAT --> OPEN --> RG --> SEL --> DEC --> ADAPT
+    STAT --> DEL
+    DEL -- "equality predicate" --> DEC
+    DEL -- "position or DV bitmap" --> SEL
+  end
+  subgraph OUT["Comet and DataFusion"]
+    A["Adapt output to Spark schema"]
+    F["Remaining exact filter and operators"]
+    ADAPT --> A --> F
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef reader fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  class P,IO,STAT,A,F native
+  class OPEN,RG,SEL,DEC,ADAPT,DEL reader

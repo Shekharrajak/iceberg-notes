@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagram rendering and validation | Iceberg batch notebook</title><link rel="stylesheet" href="../assets/notes.css"><script defer src="../assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="../index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="../index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="../01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="../02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="../03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="../04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="../05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="../06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="../07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="../08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="../09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="../10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="../VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="README.html" aria-current="page"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="../diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="README.md">Markdown source</a></header><article><h1 id="diagram-rendering-and-validation">Diagram rendering and validation</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#render">Render</a></li>
+<li><a href="#render-the-complete-notebook">Render the complete notebook</a></li>
+<li><a href="#check-notes">Check notes</a></li>
+<li><a href="#check-the-offline-gallery">Check the offline gallery</a></li>
+<li><a href="#font-assets">Font assets</a></li></ul></nav></details>
+<p>The Markdown chapters are the source of truth. <code>render-diagrams.mjs</code> extracts every fenced Mermaid block, parses and renders it with Mermaid, embeds the bundled Ubuntu font into each SVG, and writes an offline gallery plus a machine-readable manifest.</p>
+<h2 id="render">Render</h2>
+<p>Use Node.js and an existing installation of Mermaid and Puppeteer. This collection was rendered with Mermaid 11.17.2, Puppeteer 23.11.1, Node.js 25.7.0 and Chrome Headless Shell 131. The renderer does not install packages, contact a CDN or modify the deck.</p>
+<pre><code>node scripts/render-diagrams.mjs \
+  --modules /absolute/path/to/node_modules \
+  --chrome /absolute/path/to/chrome-headless-shell</code></pre>
+<p>The modules directory must contain <code>mermaid</code> and <code>puppeteer</code>. A compatible local Chromium/Chrome executable is required. Optional <code>--preview-dir /absolute/path</code> saves verification PNGs outside the notes. The default notes root is resolved from the script&#39;s own location, so the command works from any working directory.</p>
+<p>Outputs under <code>diagrams/</code> are generated: <code>.mmd</code>, <code>.svg</code>, <code>manifest.json</code> and <code>index.html</code>. Existing files with the same generated names are replaced when intentionally regenerating. The script does not delete stale diagrams after renaming a chapter; inspect the manifest and remove obsolete outputs deliberately if needed.</p>
+<p>The gallery is offline and uses external SVG image files. Open it directly in a browser. Diagrams retain their natural size in scrollable panels and also have an SVG link for zooming. It does not require a web server or Mermaid installed to view.</p>
+<h2 id="render-the-complete-notebook">Render the complete notebook</h2>
+<pre><code>node scripts/render-notes.mjs --modules /absolute/path/to/node_modules</code></pre>
+<p>This uses <code>marked</code> 4.x (verified with 4.3.0) from the supplied modules directory. Run it after rendering changed diagrams. It generates <code>index.html</code>, a matching HTML page for every chapter and supporting guide, and <code>notes-manifest.json</code>. It also makes the gallery&#39;s chapter links open HTML. No packages are installed and the presentation is unchanged.</p>
+<p>Open <code>index.html</code> directly in a browser to read the prose, tables and diagrams together. Chapter links stay in the HTML notebook. Markdown and Mermaid source links remain available explicitly. Diagrams fit the reading width; use Actual size or Open SVG for detail. Source-code links open local files, with line references retained in their link tooltips; browser navigation does not jump to a code line.</p>
+<p>The static pages use the bundled fonts and <code>assets/notes.css</code> / <code>assets/notes.js</code>. There is no runtime Markdown parser, Mermaid dependency, CDN or web-server requirement. Edit Markdown, not generated HTML, then rerun the renderer.</p>
+<h2 id="check-notes">Check notes</h2>
+<pre><code>node scripts/validate-notes.mjs</code></pre>
+<p>The validator checks chapter links/anchors, local source paths and line numbers, Mermaid count/theme requirements, generated-source parity and SVG presence. Absolute source links require the recorded local repositories. On another machine, supply <code>--skip-source-paths</code> and use the source ledger&#39;s repository/revision mapping to locate code.</p>
+<p>Use <code>--notes-parent /absolute/path/to/talk/notes</code> only when validating a staging copy whose link to the preserved older notebook lives in the final talk repository.</p>
+<h2 id="check-the-offline-gallery">Check the offline gallery</h2>
+<pre><code>node scripts/verify-gallery.mjs \
+  --modules /absolute/path/to/node_modules \
+  --chrome /absolute/path/to/chrome-headless-shell \
+  --screenshots /absolute/path/to/verification-images</code></pre>
+<p>This opens the local gallery at desktop and mobile viewport sizes, checks image decoding, font availability and document overflow, and saves screenshots. Wide diagrams intentionally scroll inside their panels. Inspect representative flowcharts and sequence diagrams visually as well.</p>
+<p>For the complete notebook, run the corresponding checks:</p>
+<pre><code>node scripts/verify-notes.mjs \
+  --modules /absolute/path/to/node_modules \
+  --chrome /absolute/path/to/chrome-headless-shell \
+  --screenshots /absolute/path/to/verification-images</code></pre>
+<p>The notebook check visits every generated page at desktop and mobile sizes, checks source hashes, links, headings, diagram decoding, fonts, overflow and zoom controls, and captures representative pages. Wide tables scroll within their own panels.</p>
+<h2 id="font-assets">Font assets</h2>
+<p><code>assets/Ubuntu-Regular.woff2</code> and <code>assets/Ubuntu-Medium.woff2</code> are embedded before layout and in the exported SVGs. Their licence is in <code>assets/Ubuntu-LICENSE.txt</code>. The renderer checks <code>document.fonts.check</code> after explicitly loading both weights. It records fonts, Mermaid version, diagram type and dimensions in the manifest.</p>
+<p>The renderer validates syntax and basic SVG/text presence. It is not a substitute for visual inspection or engine correctness tests. <code>VALIDATION.md</code> records what was actually checked for this revision.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="../VALIDATION.html"><small>Previous</small>Validation</a><span></span></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

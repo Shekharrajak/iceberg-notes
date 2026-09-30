@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native execution serialization and memory | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html" aria-current="page"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="04-native-runtime-and-serde.md">Markdown source</a></header><article><h1 id="native-execution-serialization-and-memory">Native execution serialization and memory</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#physical-conversion-flow">Physical conversion flow</a></li>
+<li><a href="#serialization-contracts">Serialization contracts</a></li>
+<li><a href="#native-batch-lifecycle-sequence">Native batch lifecycle sequence</a></li>
+<li><a href="#arrow-lifetime-and-copying">Arrow lifetime and copying</a></li>
+<li><a href="#memory-reservation-flow">Memory reservation flow</a></li>
+<li><a href="#practical-boundaries-to-inspect">Practical boundaries to inspect</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="05-distributed-execution.html">Distributed execution</a></p>
+<h2 id="summary">Summary</h2>
+<p>Comet translates eligible Spark physical regions into a protobuf plan, instantiates a native execution context inside a Spark task, and streams Arrow batches through local operators. Task serialization, native-plan serialization, Arrow FFI, shuffle encoding and Iceberg commit-message encoding are different protocols.</p>
+<p>Evidence: <a href="09-source-ledger.html#comet-runtime">Comet runtime</a>, <a href="09-source-ledger.html#memory">memory</a>, <a href="09-source-ledger.html#shuffle">shuffle encoding</a>, <a href="09-source-ledger.html#writes">write handoff</a>.</p>
+<h2 id="physical-conversion-flow">Physical conversion flow</h2>
+<figure class="diagram" id="diagram-04-physical-conversion-flow"><figcaption><span>Physical conversion flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-04-physical-conversion-flow" hidden>Actual size</button><a href="diagrams/04-physical-conversion-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/04-physical-conversion-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-04-physical-conversion-flow" tabindex="0" role="region" aria-label="Physical conversion flow"><img src="diagrams/04-physical-conversion-flow.svg" width="1987" height="326" alt="Physical conversion flow"></div></figure>
+<p><code>CometSparkSessionExtensions</code> inserts rules at columnar and AQE preparation/optimization points. <code>CometScanRule</code> checks scan contracts; <code>CometExecRule</code> converts eligible physical operators. Native operators and expressions are explicitly translated, including Spark-compatible behavior. Supported DataFusion APIs alone do not establish Spark parity.</p>
+<p>Adjacent native operators can form one execution block. Its leaves may be native file scans, input Arrow streams, or raw shuffle streams. A JVM-only operator can split the region. An exchange changes distributed ownership even when both sides are native.</p>
+<h2 id="serialization-contracts">Serialization contracts</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Boundary</th>
+<th>Representation</th>
+<th>Ownership and cost</th>
+</tr>
+</thead><tbody><tr>
+<td>Driver to Spark executor</td>
+<td>Spark task description, task binary/broadcast and partition object</td>
+<td>Distributed task launch; not a stream of query result rows</td>
+</tr>
+<tr>
+<td>JVM to native planner</td>
+<td>Protobuf operators, expressions, configuration and scan pools</td>
+<td>Copy/parse control metadata, then build native objects</td>
+</tr>
+<tr>
+<td>Iceberg task distribution</td>
+<td>Common deduplicated pools plus per-partition task references</td>
+<td>Avoid repeating shared schemas/deletes for every file/task</td>
+</tr>
+<tr>
+<td>JVM to native batch input</td>
+<td>Arrow C Stream or compatible batch bridge</td>
+<td>In-process addresses and release callbacks, not network serialization</td>
+</tr>
+<tr>
+<td>Native output to JVM</td>
+<td>Arrow C Data arrays/schema plus explicit row count</td>
+<td>Buffer lifetime must outlive consumers; some adaptations allocate</td>
+</tr>
+<tr>
+<td>Executor shuffle transport</td>
+<td>Comet-framed compressed Arrow IPC blocks</td>
+<td>Encode, transfer and decode; not C pointers sent over the network</td>
+</tr>
+<tr>
+<td>Native write result to JVM</td>
+<td>Binary Avro manifest payload plus written-location payload</td>
+<td>Recover DataFiles and cleanup ownership; not a published snapshot</td>
+</tr>
+<tr>
+<td>Executor write result to driver</td>
+<td>Serialized Iceberg WriterCommitMessage</td>
+<td>Driver coordinates a single logical table commit</td>
+</tr>
+</tbody></table></div>
+<p>The scan pools contain shared schemas, specs, projection IDs, partition values, delete files/sets and residuals. The per-partition slice is placed on the Spark partition object; the entire O(number of partitions) map is not supposed to ride in every task&#39;s shared binary. Reflection is used on the JVM to interface with supported Iceberg class shapes. Failed compatibility extraction is a fallback reason during planning, not license to omit correctness metadata.</p>
+<h2 id="native-batch-lifecycle-sequence">Native batch lifecycle sequence</h2>
+<figure class="diagram" id="diagram-04-native-batch-lifecycle-sequence"><figcaption><span>Native batch lifecycle sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-04-native-batch-lifecycle-sequence" hidden>Actual size</button><a href="diagrams/04-native-batch-lifecycle-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/04-native-batch-lifecycle-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-04-native-batch-lifecycle-sequence" tabindex="0" role="region" aria-label="Native batch lifecycle sequence"><img src="diagrams/04-native-batch-lifecycle-sequence.svg" width="1397" height="1088" alt="Native batch lifecycle sequence"></div></figure>
+<p>This is a logical lifecycle. Native asynchronous work can run on Comet&#39;s Tokio runtime. JNI callbacks have thread-context constraints; the shuffle scanner explicitly pulls JVM input outside its stream <code>poll_next</code> path. Some supported UDF bridges install task/classloader context on attached native worker threads. Do not infer that every callback can happen on any thread.</p>
+<p><code>createPlan</code> establishes the native context; physical-plan construction/execution is driven as execution starts. <code>CometExecIterator</code> registers completion cleanup and converts native errors back to Spark-facing exceptions. <code>close()</code> attempts independent cleanup steps and is idempotent. The lifecycle suite tests setup failure and teardown failure paths.</p>
+<h2 id="arrow-lifetime-and-copying">Arrow lifetime and copying</h2>
+<p>Arrow arrays refer to buffers and children; a <code>RecordBatch</code> groups arrays with a schema and row count. The C Data interface exports a schema, array description and release contract. The C Stream interface exposes a producer of such arrays. Neither is an RPC system.</p>
+<p>Zero-copy is boundary-specific. Comet&#39;s output code explicitly materializes non-zero-offset arrays through <code>take</code> on a compatibility path. Type casts, schema adaptation, filtering, decompression and shuffle interleaving can allocate. Returning a pointer does not make the full query allocation-free.</p>
+<p>The shuffle block bridge returns a reusable DirectByteBuffer. Its bytes are valid only until the next pull. Native decoding must finish consuming those compressed bytes first; the decoded batch uses separately owned decompressed buffers.</p>
+<h2 id="memory-reservation-flow">Memory reservation flow</h2>
+<figure class="diagram" id="diagram-04-memory-reservation-flow"><figcaption><span>Memory reservation flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-04-memory-reservation-flow" hidden>Actual size</button><a href="diagrams/04-memory-reservation-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/04-memory-reservation-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-04-memory-reservation-flow" tabindex="0" role="region" aria-label="Memory reservation flow"><img src="diagrams/04-memory-reservation-flow.svg" width="1808" height="399" alt="Memory reservation flow"></div></figure>
+<p>The shared off-heap pool is an accounting budget, not a single shared allocator. Rust still allocates native memory. Multiple native plans in one Spark task share a task budget. Pool policy controls fairness and admission, but only explicitly reserved allocations are tracked.</p>
+<p>Per-batch kernel buffers, decompression, readers, request buffers, runtime overhead, JVM Arrow buffers and allocator fragmentation can sit outside reservations. The container can run out of memory while the reservation pool appears healthy.</p>
+<p>Spark&#39;s <code>NativeMemoryConsumer.spill</code> callback does not directly spill native state. Native operators with spill support respond to reservation pressure through their own logic. Do not interpret shared accounting as universal cross-language spill control, or assume every join/aggregate/expression can spill.</p>
+<h2 id="practical-boundaries-to-inspect">Practical boundaries to inspect</h2>
+<ul>
+<li>Plan conversion: which node remained JVM and why?</li>
+<li>Plan payload: are schemas/deletes pooled, and is each task receiving only its slice?</li>
+<li>Input ownership: who closes the stream, batch, buffer and native plan on setup failure?</li>
+<li>Memory: compare reserved bytes, native allocation/RSS, JVM memory and spill metrics.</li>
+<li>Throughput: distinguish I/O wait, decode, operator state growth, JNI boundary work and shuffle encoding.</li>
+<li>Cancellation: task completion should release resources even when the consumer stops at LIMIT.</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="03-parquet.html"><small>Previous</small>Parquet read and write</a><a href="05-distributed-execution.html"><small>Next</small>Distributed execution</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

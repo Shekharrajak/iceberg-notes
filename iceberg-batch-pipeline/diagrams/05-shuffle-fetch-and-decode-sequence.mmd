@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Driver metadata
+    participant M as MapOutputTracker
+  end
+  box rgb(220, 252, 231) Reduce executor JVM
+    participant F as ShuffleBlockFetcherIterator
+    participant B as CometShuffleBlockIterator
+  end
+  box rgb(241, 245, 249) Shuffle storage
+    participant S as Local disk or remote block service
+  end
+  box rgb(237, 233, 254) Native reducer
+    participant N as ShuffleScanExec
+  end
+  F->>M: Resolve map block locations and sizes
+  M-->>F: Return block metadata
+  N->>B: Pull next compressed block
+  B->>F: Read stream header and body
+  F->>S: Fetch required blocks with in-flight limits
+  S-->>F: Return block bytes
+  F-->>B: Supply InputStream bytes
+  B-->>N: Return DirectByteBuffer and body length
+  N->>N: Decode codec prefix and Arrow IPC stream
+  N->>N: Adapt or validate schema as required
+  N-->>B: Report decoded record count
+  Note over B,N: Consume compressed bytes before next pull reuses the buffer

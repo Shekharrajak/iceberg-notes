@@ -1,0 +1,28 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DRIVER["Spark driver"]
+    Q["Physical plan and AQE"]
+    R["RDD dependencies"]
+    D["DAGScheduler<br/>stage dependencies"]
+    TS["TaskSchedulerImpl and TaskSetManager<br/>resources, locality, attempts"]
+    B["Scheduler backend"]
+    Q --> R --> D --> TS --> B
+  end
+  subgraph EXEC["Executor process"]
+    EB["Executor backend"]
+    T["TaskRunner and TaskContext"]
+    C["Comet RDD and native plan"]
+    B -- "LaunchTask RPC" --> EB --> T --> C
+  end
+  subgraph CLUSTER["Cluster resource system"]
+    CM["Kubernetes, YARN or standalone backend"]
+    CM -- "executor resources" --> B
+  end
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef worker fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef external fill:#f1f5f9,stroke:#64748b,color:#334155
+  class Q,R,D,TS,B spark
+  class EB,T worker
+  class C native
+  class CM external

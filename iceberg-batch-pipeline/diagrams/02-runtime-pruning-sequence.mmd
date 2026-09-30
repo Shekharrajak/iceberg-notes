@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark driver
+    participant B as Join build side
+    participant Q as Runtime subquery
+    participant C as Comet scan exec
+    participant S as Original BatchScanExec
+  end
+  box rgb(254, 249, 195) Iceberg Java
+    participant I as Runtime filtering scan
+  end
+  box rgb(237, 233, 254) Native executor
+    participant N as Assigned scan
+  end
+  B-->>Q: Supply join-key result
+  C->>Q: Resolve supported runtime subqueries
+  Q-->>C: Return pruning values
+  C->>S: Obtain inputRDD with current runtime filters
+  S->>I: Apply translated runtime predicates
+  I->>I: Filter tasks by partition values and rebuild groups
+  I-->>S: Return surviving input partitions
+  S-->>C: Return filtered partition work
+  C->>C: Serialize common pools and per-partition tasks
+  C->>N: Ship assigned task payload through Spark
+  Note over C,N: Empty DPP output must remain empty, not restore original files

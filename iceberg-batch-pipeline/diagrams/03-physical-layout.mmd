@@ -1,0 +1,26 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph FILE["One Parquet file"]
+    F[("File")]
+    RG["Row groups"]
+    CC["Column chunks<br/>one per physical leaf per row group"]
+    DP["Optional dictionary page"]
+    P["Encoded data pages"]
+    FOOT["Footer<br/>schema and row-group metadata"]
+    IDX["Optional page indexes and bloom data"]
+    F -- "contains" --> RG
+    RG -- "contains" --> CC
+    CC --> DP
+    CC --> P
+    F --> FOOT
+    F --> IDX
+  end
+  subgraph MEMORY["Decoded memory"]
+    ARR["Arrow arrays<br/>validity, offsets, values, children"]
+    B["RecordBatch"]
+    P -- "decompress and decode" --> ARR --> B
+  end
+  classDef parquet fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  class F,RG,CC,DP,P,FOOT,IDX parquet
+  class ARR,B native

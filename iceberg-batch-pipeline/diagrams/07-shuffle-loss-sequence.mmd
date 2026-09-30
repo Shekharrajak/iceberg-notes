@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(220, 252, 231) Reduce executor
+    participant R as Shuffle fetcher and task
+  end
+  box rgb(241, 245, 249) Shuffle storage
+    participant O as Map output location
+  end
+  box rgb(224, 242, 254) Spark driver
+    participant D as DAGScheduler
+    participant M as MapOutputTracker
+  end
+  box rgb(220, 252, 231) Map executor
+    participant P as Replacement map attempt
+  end
+  R->>O: Fetch map block
+  O-->>R: Fail transfer or report missing output
+  R->>R: Exhaust applicable transport retries
+  R-->>D: Report FetchFailed
+  D->>M: Invalidate affected map-output metadata
+  D->>D: Mark affected stages for resubmission within limits
+  D->>P: Recompute missing map output from lineage
+  P-->>M: Publish replacement output via Spark completion handling
+  D->>R: Resubmit downstream work
+  R->>O: Fetch currently registered output locations

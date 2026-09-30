@@ -1,0 +1,28 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph ICE["Iceberg Java"]
+    T["Table metadata and selected snapshot"]
+    ML["Manifest list summaries"]
+    MF["Surviving data and delete manifests"]
+    DI["DeleteFileIndex"]
+    FT["FileScanTasks with residuals"]
+    GR["Split and group tasks"]
+    T --> ML --> MF --> FT --> GR
+    MF --> DI --> FT
+  end
+  subgraph SPARK["Spark and Comet driver"]
+    P["SparkInputPartitions"]
+    DPP["Resolve runtime filters"]
+    SER["Pool shared metadata and<br/>serialize each partition slice"]
+    GR --> P --> DPP --> SER
+  end
+  subgraph NATIVE["Executor"]
+    RUN["Read only the assigned task slice"]
+    SER --> RUN
+  end
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  class T,ML,MF,DI,FT,GR ice
+  class P,DPP,SER spark
+  class RUN native

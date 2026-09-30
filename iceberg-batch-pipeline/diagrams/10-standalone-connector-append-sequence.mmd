@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(237, 233, 254) DataFusion connector
+    participant P as TableProvider
+    participant W as Partitioned write plan
+    participant C as Coalesced commit plan
+  end
+  box rgb(254, 249, 195) Iceberg Rust
+    participant I as Writers and transaction
+  end
+  box rgb(241, 245, 249) Catalog and storage
+    participant O as External table state
+  end
+  P->>P: Reject non-append insert operations
+  P->>O: Load current table
+  O-->>P: Return table metadata
+  P->>W: Project partition values and repartition
+  W->>W: Sort by partition unless using fanout
+  W->>I: Write data files
+  I->>O: Persist file contents
+  I-->>W: Return file descriptors
+  W-->>C: Coalesce file-result streams
+  C->>I: Apply fast append transaction
+  I->>O: Commit through catalog
+  O-->>C: Return commit outcome through transaction

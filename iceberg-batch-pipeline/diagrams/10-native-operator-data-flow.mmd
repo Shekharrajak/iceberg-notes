@@ -1,0 +1,23 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph MAP["One map task native region"]
+    SC["IcebergScanExec"]
+    FI["Filter and projection"]
+    AG["Partial aggregate state"]
+    SW["Native shuffle writer"]
+    SC --> FI --> AG --> SW
+  end
+  subgraph SPARK["Spark distributed exchange"]
+    SH[("Materialized shuffle blocks")]
+    SW --> SH
+  end
+  subgraph REDUCE["One reduce task native region"]
+    SR["ShuffleScanExec"]
+    FA["Final aggregate merges state"]
+    OUT["Arrow output"]
+    SH --> SR --> FA --> OUT
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  class SC,FI,AG,SW,SR,FA,OUT native
+  class SH spark

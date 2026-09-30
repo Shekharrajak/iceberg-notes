@@ -1,0 +1,37 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":52},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DRIVER["Driver"]
+    S["Scheduler RPC"]
+    M["MapOutputTracker and broadcasts"]
+    I["Iceberg catalog and metadata planning"]
+  end
+  subgraph EA["Executor A"]
+    JA["JVM task and block service"]
+    NA["Native execution"]
+    JA -- "JNI and Arrow C interfaces" --> NA
+  end
+  subgraph EB["Executor B"]
+    JB["JVM task and shuffle fetcher"]
+    NB["Native shuffle decode and operators"]
+    JB -- "JNI compressed-buffer handoff" --> NB
+  end
+  subgraph EXT["External storage and catalog"]
+    C["Catalog service when remote"]
+    O[("Object storage or filesystem")]
+  end
+  S -- "task and status messages" --> JA
+  S -- "task and status messages" --> JB
+  M -- "locations and broadcast data" --> JB
+  JA -- "shuffle block bytes" --> JB
+  I --> C
+  I --> O
+  O -- "data and delete byte ranges" --> NA
+  O -- "data and delete byte ranges" --> NB
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef ext fill:#f1f5f9,stroke:#64748b,color:#334155
+  class S,M,JA,JB spark
+  class NA,NB native
+  class I ice
+  class C,O ext

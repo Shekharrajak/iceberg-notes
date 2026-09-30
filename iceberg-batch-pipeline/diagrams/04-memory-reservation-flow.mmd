@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph NATIVE["Native task state"]
+    O["Operator wants to grow state"]
+    R["Memory reservation"]
+    DEC{"Budget granted?"}
+    A["Allocate or retain buffers"]
+    SP["Operator-specific spill or failure"]
+    O --> R
+    DEC -- "yes" --> A
+    DEC -- "no" --> SP
+  end
+  subgraph JVM["Spark memory accounting"]
+    B["CometTaskMemoryManager JNI bridge"]
+    M["TaskMemoryManager off-heap budget"]
+    R --> B --> M --> DEC
+  end
+  subgraph DISK["Executor storage"]
+    D[("Spill files")]
+    SP --> D
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  class O,R,DEC,A,SP native
+  class B,M spark
+  class D store

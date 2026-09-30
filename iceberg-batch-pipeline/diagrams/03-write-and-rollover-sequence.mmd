@@ -1,0 +1,28 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(237, 233, 254) Comet native writer
+    participant R as Partition writer and row pacing
+  end
+  box rgb(255, 237, 213) File writer
+    participant W as Rolling writer
+    participant P as Parquet writer
+  end
+  box rgb(241, 245, 249) Storage
+    participant O as Output file
+  end
+  loop Input batches or paced slices
+    R->>W: Write rows for a partition
+    W->>P: Encode slice
+    opt Row-group threshold reached
+      P->>O: Flush encoded column chunks
+    end
+    W->>W: Check target file size at supported cadence
+    opt Roll file
+      W->>P: Close current file
+      P->>O: Finish footer
+      P-->>W: Return file result and metadata
+      W->>P: Open next file writer
+    end
+  end
+  R->>W: Close remaining output
+  W-->>R: Return DataFile descriptors

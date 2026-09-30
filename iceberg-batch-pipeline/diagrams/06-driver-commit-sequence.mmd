@@ -1,0 +1,32 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(220, 252, 231) Parallel tasks
+    participant E as Executor writers
+  end
+  box rgb(224, 242, 254) Spark driver
+    participant C as IcebergCommitExec
+  end
+  box rgb(254, 249, 195) Iceberg Java
+    participant W as BatchWrite
+    participant P as SnapshotProducer and TableOperations
+  end
+  box rgb(241, 245, 249) Catalog and metadata storage
+    participant M as Table state
+  end
+  E-->>C: Return successful task messages
+  C->>C: Wait for successful write job completion
+  C->>W: Invoke commit callbacks and BatchWrite.commit
+  W->>P: Build append, overwrite or replacement update
+  P->>P: Validate operation against current base
+  P->>M: Commit expected base and new metadata
+  alt Commit succeeds
+    M-->>P: Confirm publication
+    P-->>C: Return success
+    C->>C: Refresh Spark cache state
+  else Retryable commit conflict
+    M-->>P: Reject stale base
+    P->>P: Refresh, reapply and revalidate within retry policy
+  else Outcome is unknown
+    M-->>P: Return uncertain outcome
+    P-->>C: Surface unknown status without unsafe cleanup
+  end

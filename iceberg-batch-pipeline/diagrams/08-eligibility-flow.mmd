@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":33,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph PLAN["Planning"]
+    E{"Comet loaded and feature enabled?"}
+    S{"Supported scan or write shape?"}
+    T{"Types, properties, storage<br/>and semantics supported?"}
+    N["Build native region"]
+    F["Keep supported Spark path<br/>and record fallback reason"]
+    E -- "yes" --> S
+    S -- "yes" --> T
+    T -- "yes" --> N
+    E -- "no" --> F
+    S -- "no" --> F
+    T -- "no" --> F
+  end
+  subgraph EXEC["Execution"]
+    RUN["Run chosen plan"]
+    ERR["Runtime failure follows task recovery"]
+    N --> RUN
+    RUN -- "error" --> ERR
+  end
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  class E,S,T,F,ERR spark
+  class N,RUN native

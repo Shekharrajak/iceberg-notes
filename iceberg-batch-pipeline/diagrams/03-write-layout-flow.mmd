@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph INPUT["Native input"]
+    B["Arrow batches"]
+    PART["Route to Iceberg partition writer"]
+    B --> PART
+  end
+  subgraph PARQUET["Parquet encoding"]
+    COL["Encode physical leaves and levels"]
+    PAGE["Build and compress pages"]
+    RG["Flush row groups"]
+    FOOT["Close file and write footer"]
+    PART --> COL --> PAGE --> RG --> FOOT
+  end
+  subgraph ICE["Iceberg file metadata"]
+    DF["DataFile descriptors<br/>counts, bounds, offsets, partition"]
+    COMMIT["Later driver commit"]
+    FOOT --> DF --> COMMIT
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef parquet fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class B,PART native
+  class COL,PAGE,RG,FOOT parquet
+  class DF,COMMIT ice

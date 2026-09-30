@@ -1,0 +1,36 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":33,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DRIVER["Spark planning"]
+    L["Append, overwrite or eligible ReplaceData"]
+    S["IcebergWriteStrategy<br/>split writer and committer"]
+    L --> S
+  end
+  subgraph EXEC["Executor tasks"]
+    G{"Native write gates<br/>and native child?"}
+    N["Comet native file writer"]
+    J["Iceberg Java file writer"]
+    A["JVM DataFile reconciliation<br/>and TaskCommit"]
+    S --> G
+    G -- "yes" --> N --> A
+    G -- "no" --> J --> A
+  end
+  subgraph COMMIT["Driver Iceberg Java"]
+    C["IcebergCommitExec collects messages"]
+    BW["BatchWrite.commit<br/>validate and publish"]
+    A --> C --> BW
+  end
+  subgraph STORE["Storage"]
+    D[("New data files")]
+    M[("Committed table metadata")]
+    N --> D
+    J --> D
+    BW -. "table publication" .-> M
+  end
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  class L,S,G,C spark
+  class N native
+  class J,A,BW ice
+  class D,M store

@@ -1,0 +1,22 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":33,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph JVM["Spark driver and Comet rules"]
+    P["Spark physical plan"]
+    G{"Supported scan, operator,<br/>expression and configuration?"}
+    N["Comet exec nodes and native plan"]
+    F["Retain Spark node and fallback reason"]
+    T["Insert or remove representation transitions"]
+    P --> G
+    G -- "yes" --> N --> T
+    G -- "no" --> F --> T
+  end
+  subgraph TASK["Spark executor task"]
+    S["Inject this partition's scan data"]
+    JNI["Native.createPlan"]
+    DF["Comet planner builds ExecutionPlan tree"]
+    T --> S --> JNI --> DF
+  end
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  class P,G,N,F,T,S spark
+  class JNI,DF native

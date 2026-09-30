@@ -1,0 +1,29 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph MAP["Map task"]
+    N["Native child plan"]
+    P["Hash, range, round-robin<br/>or single partitioning"]
+    EN["Encode compressed Arrow IPC blocks"]
+    SP["Buffer or spill partition data"]
+    N --> P --> EN --> SP
+  end
+  subgraph LOCAL["Spark shuffle storage"]
+    F[("Map data and index files")]
+    MS["MapStatus locations and lengths"]
+    SP --> F
+    F -. "publish successful map output" .-> MS
+  end
+  subgraph REDUCE["Reduce task"]
+    GET["Spark block fetcher"]
+    JNI["CometShuffleBlockIterator"]
+    DE["ShuffleScanExec decodes IPC"]
+    OP["Downstream native operators"]
+    MS --> GET
+    F --> GET --> JNI --> DE --> OP
+  end
+  classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef ext fill:#f1f5f9,stroke:#64748b,color:#334155
+  class N,P,EN,SP,DE,OP native
+  class MS,GET,JNI spark
+  class F ext

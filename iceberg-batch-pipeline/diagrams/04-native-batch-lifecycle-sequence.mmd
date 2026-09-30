@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark executor JVM
+    participant T as TaskContext
+    participant I as CometExecIterator
+    participant A as Arrow JVM consumer
+  end
+  box rgb(237, 233, 254) Comet native
+    participant C as Native execution context
+    participant D as DataFusion stream
+  end
+  I->>C: createPlan with protobuf, input slots and task identity
+  C->>C: Configure session, runtime, memory pool and spill dirs
+  I->>T: Register task-completion cleanup
+  loop Output requested
+    I->>C: executePlan with output array/schema addresses
+    C->>C: Prepare supported JVM input slots
+    C->>D: Drive physical-plan stream
+    D-->>C: Return RecordBatch or end of stream
+    C-->>I: Export Arrow arrays and row count
+    I-->>A: Yield ColumnarBatch
+    A->>A: Consume batch before its lifetime ends
+    I->>I: Close prior batch as iteration advances
+  end
+  T-->>I: Complete or cancel task
+  I->>C: releasePlan
+  C->>C: Drop streams, context references and tracked resources

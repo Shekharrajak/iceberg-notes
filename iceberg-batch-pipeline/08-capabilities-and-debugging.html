@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Native capabilities gaps and investigation guide | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html" aria-current="page"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="08-capabilities-and-debugging.md">Markdown source</a></header><article><h1 id="native-capabilities-gaps-and-investigation-guide">Native capabilities gaps and investigation guide</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#status-vocabulary">Status vocabulary</a></li>
+<li><a href="#eligibility-flow">Eligibility flow</a></li>
+<li><a href="#read-coverage">Read coverage</a></li>
+<li><a href="#write-coverage">Write coverage</a></li>
+<li><a href="#configuration-anchors">Configuration anchors</a></li>
+<li><a href="#integration-gaps-worth-investigating">Integration gaps worth investigating</a></li>
+<li><a href="#investigation-workflow">Investigation workflow</a></li>
+<li><a href="#proof-checklist-for-a-public-claim">Proof checklist for a public claim</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="09-source-ledger.html">Source ledger</a></p>
+<h2 id="status-vocabulary">Status vocabulary</h2>
+<p><strong>Native</strong> means an implementation exists in this checkout, subject to its other gates. <strong>Delegated</strong> means Spark or Iceberg Java owns the operation intentionally. <strong>Partial</strong> means only some plan shapes or feature combinations are native. <strong>Not admitted</strong> means the native planner declines the path; the overall Spark query may still work.</p>
+<p>Source scope is Comet <code>184accac5</code> plus the explicitly recorded local residual-pushdown edits. This table is not a current-upstream feature tracker. Source references and test anchors are in <a href="09-source-ledger.html">the ledger</a>.</p>
+<h2 id="eligibility-flow">Eligibility flow</h2>
+<figure class="diagram" id="diagram-08-eligibility-flow"><figcaption><span>Eligibility flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-08-eligibility-flow" hidden>Actual size</button><a href="diagrams/08-eligibility-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/08-eligibility-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-08-eligibility-flow" tabindex="0" role="region" aria-label="Eligibility flow"><img src="diagrams/08-eligibility-flow.svg" width="1847" height="495" alt="Eligibility flow"></div></figure>
+<p>An unsupported predicate can remain as an exact post-scan filter without rejecting the whole scan. Conversely, a feature that the reader cannot safely represent can reject the scan itself. Treat these as separate outcomes.</p>
+<h2 id="read-coverage">Read coverage</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Feature</th>
+<th>Status</th>
+<th>Qualification</th>
+</tr>
+</thead><tbody><tr>
+<td>Catalog and snapshot selection</td>
+<td>Delegated</td>
+<td>Java plans the selected state; native receives tasks</td>
+</tr>
+<tr>
+<td>Time travel and branch reads</td>
+<td>Delegated planning plus native data reading</td>
+<td>Historical schema IDs and projection matter</td>
+</tr>
+<tr>
+<td>Manifest pruning and delete association</td>
+<td>Delegated</td>
+<td>Java plans applicable tasks/deletes</td>
+</tr>
+<tr>
+<td>Parquet data scan</td>
+<td>Native</td>
+<td>Iceberg ORC/Avro data files are not native here</td>
+</tr>
+<tr>
+<td>v1/v2/v3 reads</td>
+<td>Native with feature gates</td>
+<td>v3 is not blanket coverage of new types/defaults/lineage</td>
+</tr>
+<tr>
+<td>Parquet position and equality deletes</td>
+<td>Native with gates</td>
+<td>Struct/Variant equality keys and unresolvable keys are rejected</td>
+</tr>
+<tr>
+<td>Puffin deletion vectors</td>
+<td>Native</td>
+<td>Blob offsets/lengths and per-data-file identity preserved</td>
+</tr>
+<tr>
+<td>Schema evolution and name mapping</td>
+<td>Native with gates</td>
+<td>Field IDs and historical delete fields are handled</td>
+</tr>
+<tr>
+<td>Arrays/maps/structs</td>
+<td>Native reading</td>
+<td>Not blanket nested/container predicate pushdown</td>
+</tr>
+<tr>
+<td>Partition transforms/evolution</td>
+<td>Supported through planning/task metadata</td>
+<td>Certain transform-bearing residuals and partition value types are rejected</td>
+</tr>
+<tr>
+<td>Row-group and page pruning</td>
+<td>Native</td>
+<td>Predicate/type/index availability controls actual pruning</td>
+</tr>
+<tr>
+<td>Residual comparisons/null/IN/logical operators</td>
+<td>Partial</td>
+<td>Top-level/type restrictions; NOT IN remains post-scan</td>
+</tr>
+<tr>
+<td>Partial residual weakening</td>
+<td>Local uncommitted implementation</td>
+<td>Do not present as committed HEAD support</td>
+</tr>
+<tr>
+<td>DPP and AQE</td>
+<td>Implemented with gates and shims</td>
+<td>Unsupported subqueries/multi-index DPP rejected; Spark 3.4 AQE DPP uses fallback</td>
+</tr>
+<tr>
+<td><code>_file</code>, <code>_pos</code>, <code>_spec_id</code>, <code>_partition</code></td>
+<td>Native</td>
+<td>Explicit metadata allowlist</td>
+</tr>
+<tr>
+<td><code>_deleted</code> and row-lineage metadata projection</td>
+<td>Not admitted</td>
+<td>Underlying reader lineage support is not exposed by Comet&#39;s allowlist</td>
+</tr>
+<tr>
+<td>Projected initial-default values</td>
+<td>Not admitted</td>
+<td>Required v3 missing-column synthesis unsupported</td>
+</tr>
+<tr>
+<td>Variant</td>
+<td>Partial</td>
+<td>Entirely unprojected roots can be tolerated; projected Variant rejected</td>
+</tr>
+<tr>
+<td>Geometry/geography/unknown types</td>
+<td>Not admitted by current type gates</td>
+<td>No blanket v3 type support</td>
+</tr>
+<tr>
+<td>Encrypted reads</td>
+<td>Qualified support</td>
+<td>AES-GCM 128/256-bit keys admitted; 192-bit rejected; runtime/version setup still matters</td>
+</tr>
+<tr>
+<td>Local, S3/S3A, GCS, OSS reads</td>
+<td>Qualified support</td>
+<td>Compatible FileIO, URI and credential setup required</td>
+</tr>
+<tr>
+<td>S3-compliant alias schemes</td>
+<td>Opt-in</td>
+<td>Do not infer support solely from URI parsing</td>
+</tr>
+<tr>
+<td>Multiple S3 data/delete buckets</td>
+<td>Not admitted</td>
+<td>One native object-store configuration per scan</td>
+</tr>
+<tr>
+<td>HDFS/Azure Iceberg locations</td>
+<td>Not admitted by this scan scheme allowlist</td>
+<td>Support in another Comet reader/dependency does not transfer</td>
+</tr>
+<tr>
+<td>Metadata tables and catalog administration</td>
+<td>Delegated or distinct scan paths</td>
+<td>This native scan recognizes specific batch/staged data scan classes</td>
+</tr>
+</tbody></table></div>
+<p>OSS read backend presence is not a claim of complete property forwarding or deployment coverage. REST catalog compatibility also does not automatically mean vended credentials are usable in Rust; the configured credential bridge and actual native access must be verified.</p>
+<h2 id="write-coverage">Write coverage</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Feature</th>
+<th>Status</th>
+<th>Qualification</th>
+</tr>
+</thead><tbody><tr>
+<td>Split file writer and committer</td>
+<td>Implemented, off by default</td>
+<td>Strategy preserves one BatchWrite and commit boundary</td>
+</tr>
+<tr>
+<td>Native file production</td>
+<td>Implemented, off by default</td>
+<td>Requires split flag and eligible native child</td>
+</tr>
+<tr>
+<td>Append and static/dynamic overwrite</td>
+<td>Native where eligible</td>
+<td>Publication remains Java</td>
+</tr>
+<tr>
+<td>Copy-on-write DELETE/UPDATE</td>
+<td>Native writing for covered shapes</td>
+<td>Scan and intermediate operators have separate eligibility</td>
+</tr>
+<tr>
+<td>Copy-on-write MERGE</td>
+<td>Partial</td>
+<td>MergeRowsExec stays JVM; native writer depends on downstream plan shape</td>
+</tr>
+<tr>
+<td>Merge-on-read WriteDelta/delete-file production</td>
+<td>Not handled by native write strategy</td>
+<td>Read support for deletes is not write support</td>
+</tr>
+<tr>
+<td>CTAS/RTAS</td>
+<td>Native inner write paths covered</td>
+<td>Table command/control remains Spark/Iceberg</td>
+</tr>
+<tr>
+<td>Partitioned and unpartitioned writers</td>
+<td>Native</td>
+<td>Clustered/fanout mode and required distribution matter</td>
+</tr>
+<tr>
+<td>Format v3 native writes</td>
+<td>Not admitted</td>
+<td>Current writer gate requires v1/v2</td>
+</tr>
+<tr>
+<td>UUID columns and encrypted writes</td>
+<td>Not admitted</td>
+<td>Reader and writer type/encryption support differ</td>
+</tr>
+<tr>
+<td>Custom FileIO/location provider/object-storage layout</td>
+<td>Restricted/not admitted</td>
+<td>Default compatible layout contract required</td>
+</tr>
+<tr>
+<td>Parquet writer options</td>
+<td>Allowlisted</td>
+<td>Enabled bloom filters, non-default page version and unvetted settings rejected</td>
+</tr>
+<tr>
+<td>Local/S3/GCS writing</td>
+<td>Qualified support</td>
+<td>GCS additionally requires the recognized GCS FileIO route</td>
+</tr>
+<tr>
+<td>OSS/HDFS/Azure writing</td>
+<td>Not admitted by native writer</td>
+<td>Separate write allowlist</td>
+</tr>
+<tr>
+<td>Branch/WAP/commit validation</td>
+<td>Delegated</td>
+<td>Java SparkWrite and SnapshotProducer retain semantics</td>
+</tr>
+<tr>
+<td>Data-file rewrite maintenance</td>
+<td>Partial native acceleration</td>
+<td>Staged scans, operators and writer each need eligibility</td>
+</tr>
+</tbody></table></div>
+<h2 id="configuration-anchors">Configuration anchors</h2>
+<pre><code>spark.comet.scan.icebergNative.enabled                  = true
+spark.comet.scan.icebergNative.dataFileConcurrencyLimit = 1
+spark.comet.write.iceberg.splitOperator.enabled         = false
+spark.comet.iceberg.write.enabled                      = false</code></pre>
+<p>These are defaults, not a complete launch recipe. Native library loading, global Comet execution, memory mode, shuffle-manager settings, supported Spark/Iceberg versions and the actual plan still matter. Treat native writes as experimental until validated for the intended workload.</p>
+<h2 id="integration-gaps-worth-investigating">Integration gaps worth investigating</h2>
+<p>These are source-derived opportunities, not measured bottlenecks or committed roadmap items.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Gap</th>
+<th>Evidence</th>
+<th>What an implementation would need</th>
+</tr>
+</thead><tbody><tr>
+<td>Bloom-filter reads not enabled</td>
+<td>Pinned reader exposes option; builder default is false; Comet omits it</td>
+<td>Configuration, query correctness, selective-I/O tests and cost assessment</td>
+</tr>
+<tr>
+<td>Row-lineage projection not wired</td>
+<td>Reader has support; Comet metadata allowlist excludes fields</td>
+<td>Task metadata propagation, schema/physical-column cases and version tests</td>
+</tr>
+<tr>
+<td>Scan distribution/order metadata lost</td>
+<td>Native scan advertises UnknownPartitioning and no ordering</td>
+<td>Correct Spark distribution semantics and storage-partitioned-join tests</td>
+</tr>
+<tr>
+<td>Narrow residual pushdown</td>
+<td>Explicit top-level/type limits and local partial-predicate work</td>
+<td>Boolean/null/NaN/type semantics, nested field identity and I/O assertions</td>
+</tr>
+<tr>
+<td>Empty native projection reads broadly</td>
+<td>Reader preserves counts through read-all fallback</td>
+<td>Zero-column row-count path that also respects deletes and filters</td>
+</tr>
+<tr>
+<td>Native MERGE and delta writes incomplete</td>
+<td>JVM MergeRows and no WriteDelta strategy match</td>
+<td>Operation-code semantics, delete production and commit parity</td>
+</tr>
+<tr>
+<td>v3 writing unavailable</td>
+<td>Explicit version gate</td>
+<td>Defaults, lineage, types, metadata and writer protocol support</td>
+</tr>
+<tr>
+<td>Storage and custom FileIO parity</td>
+<td>Explicit scheme/provider/property gates</td>
+<td>End-to-end credentials, multi-bucket configuration and failure tests</td>
+</tr>
+</tbody></table></div>
+<h2 id="investigation-workflow">Investigation workflow</h2>
+<p>Use a read-only baseline first. Record the exact physical plan, source snapshots, table schema/spec history, format version, properties, delete types and storage scheme. Change one variable at a time when testing.</p>
+<pre><code>Correct result -&gt; executed native plan proof -&gt; pruning evidence -&gt; operator and I/O metrics -&gt; resource profile -&gt; repeatable comparison</code></pre>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Symptom</th>
+<th>First questions</th>
+<th>Source area</th>
+</tr>
+</thead><tbody><tr>
+<td>Native scan absent</td>
+<td>Is Comet loaded? Which schema/FileIO/residual/version gate failed?</td>
+<td>CometScanRule</td>
+</tr>
+<tr>
+<td>Correct rows but high I/O</td>
+<td>Did residual serialize? Are indexes present? Are bounds selective?</td>
+<td>Scan serde and Rust reader</td>
+</tr>
+<tr>
+<td>Deleted rows appear</td>
+<td>Correct snapshot? Applicable delete list? Raw path and field IDs preserved?</td>
+<td>DeleteFileIndex, serde, reader</td>
+</tr>
+<tr>
+<td>Many tiny tasks</td>
+<td>Split/open-cost settings? File layout? DPP results?</td>
+<td>Iceberg task grouping</td>
+</tr>
+<tr>
+<td>Driver memory pressure</td>
+<td>Huge metadata/task pools or task binary? Planning parallelism?</td>
+<td>Planning and plan-data distribution</td>
+</tr>
+<tr>
+<td>Executor OOM</td>
+<td>Reserved versus untracked native memory? Too many files/partitions in flight?</td>
+<td>Memory pool, readers, shuffle writer</td>
+</tr>
+<tr>
+<td>Shuffle bottleneck</td>
+<td>Partition skew, bytes, fetch wait, codec time, spill, network?</td>
+<td>Exchange, writer and reader</td>
+</tr>
+<tr>
+<td>Writer remains JVM</td>
+<td>Both flags? Native child? v3/properties/layout gate?</td>
+<td>Write strategy and native serde</td>
+</tr>
+<tr>
+<td>Files exist but no new snapshot</td>
+<td>Task files are not publication; was commit attempted or uncertain?</td>
+<td>Commit exec and SnapshotProducer</td>
+</tr>
+<tr>
+<td>Slow commit</td>
+<td>Catalog latency/conflicts/metadata work rather than file encoding?</td>
+<td>Java commit path</td>
+</tr>
+</tbody></table></div>
+<p>Use runtime metric names in context. Native <code>bytes_scanned</code> concerns actual scan I/O, including applicable delete reads; file size from a manifest is different. Shuffle write/read bytes, spill bytes and encoded/decoded row counts measure different stages. <code>elapsed_compute</code> is not necessarily end-to-end wall time.</p>
+<h2 id="proof-checklist-for-a-public-claim">Proof checklist for a public claim</h2>
+<ul>
+<li>Record source versions and local changes, not just a release nickname.</li>
+<li>Show the actual plan and relevant fallback reasons.</li>
+<li>Check results against the compatible Spark path.</li>
+<li>For pruning, show bytes or skipped units, not just filtered output rows.</li>
+<li>For native writing, show writer engagement, file layout and the Java commit boundary.</li>
+<li>For retries, name the failed unit and distinguish task, stage and commit retry.</li>
+<li>For zero-copy, identify the exact boundary and any adaptation path.</li>
+<li>Keep issue/PR status and performance promises out of the notes unless freshly verified.</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="07-fault-tolerance.html"><small>Previous</small>Fault tolerance</a><a href="09-source-ledger.html"><small>Next</small>Source ledger</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

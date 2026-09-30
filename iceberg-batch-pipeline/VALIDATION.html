@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Documentation validation | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html" aria-current="page"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="VALIDATION.md">Markdown source</a></header><article><h1 id="documentation-validation">Documentation validation</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#formatted-notebook">Formatted notebook</a></li></ul></nav></details>
+<p>Checked on 2026-09-30 against the local revisions recorded in the source ledger. Engine tests and benchmarks were not run for this notebook. Named tests in the chapters are inspected coverage evidence, not passing results from this session.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead><tbody><tr>
+<td>Root Markdown and source links</td>
+<td>12 Markdown files and 154 local links passed path, anchor and source-line checks</td>
+</tr>
+<tr>
+<td>Mermaid syntax and rendering</td>
+<td>All 29 diagrams parsed and rendered with Mermaid 11.17.2</td>
+</tr>
+<tr>
+<td>Generated-source parity</td>
+<td>Every exported <code>.mmd</code> matches its Markdown source block</td>
+</tr>
+<tr>
+<td>SVG XML</td>
+<td>All 29 standalone SVGs passed <code>xmllint --noout</code></td>
+</tr>
+<tr>
+<td>Fonts</td>
+<td>Ubuntu loaded before layout and is embedded in every SVG</td>
+</tr>
+<tr>
+<td>Desktop gallery</td>
+<td>All 29 images decoded at 1440 x 1100; no document-level horizontal overflow</td>
+</tr>
+<tr>
+<td>Mobile gallery</td>
+<td>All 29 images decoded at 390 x 844; no document-level horizontal overflow</td>
+</tr>
+<tr>
+<td>Visual review</td>
+<td>Inspected desktop/mobile gallery screenshots and representative flow/sequence diagrams, including the native scan and stream-execution paths</td>
+</tr>
+<tr>
+<td>Scope</td>
+<td>Existing notebook and presentation preserved; no engine source changes or dependency installation</td>
+</tr>
+</tbody></table></div>
+<p>The offline gallery uses scrollable panels for wide diagrams; this is intentional, not a claim that each diagram fits a phone screen. Automated rendering checks do not establish implementation correctness or exhaustive absence of visual overlap.</p>
+<h2 id="formatted-notebook">Formatted notebook</h2>
+<p>The browser notebook contains 13 generated HTML pages: the index, ten chapters, validation record and rendering guide. All 29 existing diagrams appear inline with their surrounding prose. Markdown remains the content source.</p>
+<ul>
+<li>Checked every page at 1440 x 1100 and 390 x 844: headings, diagram counts, image decoding, fonts, responsive navigation and diagram zoom controls passed.</li>
+<li>Verified 280 unique local links and assets, including chapter anchors; no network requests or browser errors occurred.</li>
+<li>Checked source hashes against the generated-page manifest to detect stale HTML.</li>
+<li>Inspected desktop and mobile screenshots of the formatted text and inline diagrams. Wide tables and enlarged diagrams scroll inside their panels; neither causes document-level horizontal overflow.</li>
+<li>Gallery chapter links open HTML. Explicit source links still open Markdown, Mermaid or local code files. Source-code line numbers remain in link tooltips; browsers do not jump to those lines.</li>
+</ul>
+<p>Rendering uses marked 4.3.0 locally and reuses the verified SVGs. The browser needs no Markdown parser, Mermaid package, web server or internet connection. No technical chapter text, SVG content or presentation files changed for this formatting update.</p>
+<p>See the renderer instructions for reproducible commands. Source references are tied to local checkouts and line numbers; rerun the validator after moving the notebook or updating those checkouts.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="10-datafusion-and-connector.html"><small>Previous</small>DataFusion and connector</a><a href="scripts/README.html"><small>Next</small>Rendering guide</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

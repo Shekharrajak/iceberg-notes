@@ -1,0 +1,29 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":33,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph IO["I/O layer"]
+    R["Request or transfer failure"]
+    IORETRY["Configured transport retry"]
+    R --> IORETRY
+  end
+  subgraph SPARK["Spark execution recovery"]
+    T["Task failure reaches Spark"]
+    K{"Failure kind"}
+    TR["Retry task attempt<br/>within policy"]
+    SR["Invalidate missing shuffle output<br/>and resubmit affected stages"]
+    FAIL["Fail job when non-retryable<br/>or limits exhausted"]
+    IORETRY -- "not recovered" --> T --> K
+    K -- "ordinary task failure" --> TR
+    K -- "fetch failure" --> SR
+    K -- "terminal" --> FAIL
+  end
+  subgraph ICE["Iceberg commit recovery"]
+    C["Commit conflict or uncertain outcome"]
+    V["Retry only allowed conflicts<br/>or surface unknown outcome"]
+    C --> V
+  end
+  classDef io fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef ice fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class R,IORETRY io
+  class T,K,TR,SR,FAIL spark
+  class C,V ice

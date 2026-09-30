@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>System architecture and ownership | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html" aria-current="page"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="01-system-architecture.md">Markdown source</a></header><article><h1 id="system-architecture-and-ownership">System architecture and ownership</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#mental-model">Mental model</a></li>
+<li><a href="#high-level-component-flow">High level component flow</a></li>
+<li><a href="#end-to-end-query-sequence">End to end query sequence</a></li>
+<li><a href="#distinct-units-of-work">Distinct units of work</a></li>
+<li><a href="#example-distributed-aggregate">Example distributed aggregate</a></li>
+<li><a href="#repository-relationships">Repository relationships</a></li>
+<li><a href="#invariants-worth-defending-in-a-talk">Invariants worth defending in a talk</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="02-iceberg-scan.html">Next: Iceberg scan</a></p>
+<h2 id="mental-model">Mental model</h2>
+<p>A query has several cooperating state machines. Spark controls the distributed computation. Iceberg controls the table snapshot and commit protocol. Comet has a native execution context inside a Spark task attempt. Parquet controls the physical file layout. Arrow describes in-memory arrays; it does not schedule work or publish table state.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Component</th>
+<th>Owns</th>
+<th>Does not automatically own</th>
+</tr>
+</thead><tbody><tr>
+<td>Spark Catalyst</td>
+<td>SQL analysis, optimization, physical plan selection</td>
+<td>Iceberg file contents or native decoding</td>
+</tr>
+<tr>
+<td>Spark DataSource V2</td>
+<td>Scan/write interfaces, input partitions, writer messages</td>
+<td>The table format&#39;s commit protocol</td>
+</tr>
+<tr>
+<td>Spark AQE</td>
+<td>Replanning around materialized query stages and observed statistics</td>
+<td>A second Iceberg snapshot chosen inside a running native task</td>
+</tr>
+<tr>
+<td>Spark scheduler</td>
+<td>Jobs, stage dependencies, task attempts, placement, retries</td>
+<td>Native operator algorithms</td>
+</tr>
+<tr>
+<td>Iceberg Java</td>
+<td>Catalog/table loading, snapshot/schema/spec selection, manifests, task planning, commit validation</td>
+<td>Every executor byte must remain JVM-owned</td>
+</tr>
+<tr>
+<td>Comet JVM</td>
+<td>Eligibility, Spark physical-plan conversion, protobuf, task/native lifecycle</td>
+<td>A separate cluster scheduler</td>
+</tr>
+<tr>
+<td>Comet native and DataFusion</td>
+<td>Local execution plans, Arrow streams, supported expressions and operators</td>
+<td>Unrestricted replacement of Spark SQL semantics</td>
+</tr>
+<tr>
+<td>Iceberg Rust</td>
+<td>Iceberg-aware reading/deletes/adaptation and eligible file writers</td>
+<td>Replanning Comet&#39;s scan from the catalog</td>
+</tr>
+<tr>
+<td>arrow-rs</td>
+<td>Arrays, buffers, Parquet codecs and readers/writers, FFI</td>
+<td>Transaction visibility or retry policy</td>
+</tr>
+</tbody></table></div>
+<p>Evidence: <a href="09-source-ledger.html#comet-runtime">Spark integration and native runtime</a>, <a href="09-source-ledger.html#iceberg-planning">Iceberg planning</a>, <a href="09-source-ledger.html#datafusion-and-arrow">DataFusion and Arrow</a>.</p>
+<h2 id="high-level-component-flow">High level component flow</h2>
+<figure class="diagram" id="diagram-01-high-level-component-flow"><figcaption><span>High level component flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-01-high-level-component-flow" hidden>Actual size</button><a href="diagrams/01-high-level-component-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/01-high-level-component-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-01-high-level-component-flow" tabindex="0" role="region" aria-label="High level component flow"><img src="diagrams/01-high-level-component-flow.svg" width="1881" height="492" alt="High level component flow"></div></figure>
+<p>The two executor boxes are not mutually exclusive for a whole query. A plan can contain several native regions separated by JVM operators, exchanges, or representation transitions. An unsupported scan need not imply that every downstream operator is JVM-only, and a native scan does not prove a native end-to-end query.</p>
+<h2 id="end-to-end-query-sequence">End to end query sequence</h2>
+<figure class="diagram" id="diagram-01-end-to-end-query-sequence"><figcaption><span>End to end query sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-01-end-to-end-query-sequence" hidden>Actual size</button><a href="diagrams/01-end-to-end-query-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/01-end-to-end-query-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-01-end-to-end-query-sequence" tabindex="0" role="region" aria-label="End to end query sequence"><img src="diagrams/01-end-to-end-query-sequence.svg" width="1854" height="913" alt="End to end query sequence"></div></figure>
+<p>This is a phase summary. Planning hooks can revisit a scan; AQE and runtime filters defer some work. Do not infer a single eager planning pass or a single task from the diagram.</p>
+<h2 id="distinct-units-of-work">Distinct units of work</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Unit</th>
+<th>Stable meaning</th>
+<th>Common mistake</th>
+</tr>
+</thead><tbody><tr>
+<td>Snapshot</td>
+<td>A committed table state, with history and references</td>
+<td>Treating an S3 prefix as the table state</td>
+</tr>
+<tr>
+<td>Iceberg partition</td>
+<td>A tuple produced by a partition spec</td>
+<td>Assuming one Spark task per partition</td>
+</tr>
+<tr>
+<td>Data file</td>
+<td>A stored data artifact with manifest metadata</td>
+<td>Assuming it contains only one row group</td>
+</tr>
+<tr>
+<td>FileScanTask</td>
+<td>A file/range plus schema, spec, residual and deletes</td>
+<td>Treating it as only a filename</td>
+</tr>
+<tr>
+<td>Spark input partition</td>
+<td>Work assigned to a task attempt</td>
+<td>Equating its count with Arrow batch count</td>
+</tr>
+<tr>
+<td>Stage</td>
+<td>Spark computation separated by distributed dependencies</td>
+<td>Calling every native operator a Spark stage</td>
+</tr>
+<tr>
+<td>Task attempt</td>
+<td>One attempt to execute a scheduling partition</td>
+<td>Assuming side effects happen once physically</td>
+</tr>
+<tr>
+<td>Native execution context</td>
+<td>A task-owned native plan and streams</td>
+<td>Treating it as a cluster-wide DataFusion session</td>
+</tr>
+<tr>
+<td>RecordBatch</td>
+<td>Schema and equal-length arrays plus row count</td>
+<td>Treating a batch as a Parquet page</td>
+</tr>
+</tbody></table></div>
+<h2 id="example-distributed-aggregate">Example distributed aggregate</h2>
+<p>Illustrative query: <code>SELECT region, SUM(amount) FROM orders WHERE event_date &gt;= DATE &#39;2026-01-01&#39; GROUP BY region</code>.</p>
+<pre><code>Map side: assigned Iceberg files -&gt; native scan -&gt; filter -&gt; partial SUM by region -&gt; hash shuffle write
+Reduce side: fetch region partitions -&gt; native shuffle decode -&gt; final SUM -&gt; result</code></pre>
+<p>The native region reduces per-row overhead; the exchange makes all contributions for one key meet. More scan tasks can improve read parallelism without changing the number of reduce partitions. Skew can leave one reduce task much slower than the others. These are different problems from Parquet decoding speed.</p>
+<h2 id="repository-relationships">Repository relationships</h2>
+<p>Comet calls Iceberg Rust directly and builds its own <code>IcebergScanExec</code>. The separate <code>datafusion-iceberg</code> project implements a DataFusion <code>TableProvider</code>, scan plan and append path. It is a useful design comparison, not a box on Comet&#39;s execution path.</p>
+<p>The sibling DataFusion checkout explains <code>ExecutionPlan::execute(partition, TaskContext)</code> and <code>SendableRecordBatchStream</code>. Comet selects/adapts operators and Spark-specific semantics through its native planner. A feature implemented in upstream DataFusion is not automatically supported by Comet&#39;s serializer, eligibility rules, Spark semantics, or tests.</p>
+<h2 id="invariants-worth-defending-in-a-talk">Invariants worth defending in a talk</h2>
+<ul>
+<li>SQL correctness spans both JVM and native components; it does not stop at the planner.</li>
+<li>Table format, file format, memory format and execution engine are separate layers.</li>
+<li>Spark cluster parallelism and native asynchronous I/O concurrency are separate controls.</li>
+<li>Native acceleration changes eligible implementation work, not the table&#39;s visibility contract.</li>
+<li>Inspect the executed plan and fallback reasons before labelling an operation native.</li>
+</ul>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="index.html"><small>Previous</small>Overview</a><a href="02-iceberg-scan.html"><small>Next</small>Iceberg scans</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

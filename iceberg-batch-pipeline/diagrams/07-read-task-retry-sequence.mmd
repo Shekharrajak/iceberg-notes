@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark driver
+    participant S as TaskSetManager and scheduler
+  end
+  box rgb(220, 252, 231) First executor
+    participant A as Task attempt A
+  end
+  box rgb(237, 233, 254) Native execution
+    participant N as Native context A
+  end
+  box rgb(220, 252, 231) Retry executor
+    participant B as Task attempt B
+  end
+  S->>A: Launch assigned partition
+  A->>N: Execute native scan and operators
+  N-->>A: Surface execution error
+  A->>A: Attempt task-completion resource cleanup
+  A-->>S: Report failed attempt
+  S->>S: Classify failure and check attempt policy
+  alt Retry is allowed
+    S->>B: Launch same logical partition with new attempt identity
+    B->>B: Build fresh native context and reread assigned work
+    B-->>S: Return successful result
+  else No retry remains or error is terminal
+    S->>S: Abort job
+  end

@@ -1,0 +1,30 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark driver
+    participant Q as SQL and Catalyst
+    participant S as Scheduler and AQE
+  end
+  box rgb(254, 249, 195) Iceberg Java
+    participant I as Scan planner
+  end
+  box rgb(237, 233, 254) Executor native region
+    participant C as Comet
+    participant R as Iceberg Rust and DataFusion
+  end
+  box rgb(241, 245, 249) Storage
+    participant O as Object store or filesystem
+  end
+  Q->>I: Request projected and filtered scan
+  I->>O: Read selected snapshot metadata and manifests
+  O-->>I: Return metadata
+  I-->>Q: Return planned file work and scan properties
+  Q->>Q: Apply Comet conversion and transition rules
+  Q->>S: Execute Spark plan and dependencies
+  S->>C: Launch task with assigned scan payload
+  C->>R: Build and execute native physical plan
+  R->>O: Read data and applicable deletes
+  O-->>R: Return file byte ranges
+  R-->>C: Yield Arrow batches or shuffle output
+  C-->>S: Report task output and metrics
+  S->>S: Materialize dependencies and adapt later work
+  S-->>Q: Complete result

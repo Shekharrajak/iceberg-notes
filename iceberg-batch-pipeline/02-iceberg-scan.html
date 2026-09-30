@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iceberg scan planning and native reading | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html" aria-current="page"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 29 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="02-iceberg-scan.md">Markdown source</a></header><article><h1 id="iceberg-scan-planning-and-native-reading">Iceberg scan planning and native reading</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
+<li><a href="#metadata-planning-flow">Metadata planning flow</a></li>
+<li><a href="#planning-objects-and-contracts">Planning objects and contracts</a></li>
+<li><a href="#runtime-pruning-sequence">Runtime pruning sequence</a></li>
+<li><a href="#native-reader-flow">Native reader flow</a></li>
+<li><a href="#deletes-and-schema-evolution">Deletes and schema evolution</a></li>
+<li><a href="#predicates-at-different-levels">Predicates at different levels</a></li>
+<li><a href="#concurrency-and-metrics">Concurrency and metrics</a></li>
+<li><a href="#test-anchors-and-validation-gaps">Test anchors and validation gaps</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="03-parquet.html">Parquet detail</a></p>
+<h2 id="summary">Summary</h2>
+<p>Iceberg Java produces the authoritative task set. Comet serializes the surviving Spark partitions after runtime pruning. Iceberg Rust reads those tasks, applies supported deletes and schema semantics, and emits Arrow batches. The native reader does not independently reload the catalog to pick another snapshot.</p>
+<p>Evidence: <a href="09-source-ledger.html#iceberg-planning">Iceberg planning</a>, <a href="09-source-ledger.html#comet-scan">Comet scan</a>, <a href="09-source-ledger.html#iceberg-rust-reader">pinned Rust reader</a>.</p>
+<h2 id="metadata-planning-flow">Metadata planning flow</h2>
+<figure class="diagram" id="diagram-02-metadata-planning-flow"><figcaption><span>Metadata planning flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-02-metadata-planning-flow" hidden>Actual size</button><a href="diagrams/02-metadata-planning-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/02-metadata-planning-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-02-metadata-planning-flow" tabindex="0" role="region" aria-label="Metadata planning flow"><img src="diagrams/02-metadata-planning-flow.svg" width="2810" height="158" alt="Metadata planning flow"></div></figure>
+<p><code>DataTableScan.doPlanFiles</code> obtains the selected snapshot&#39;s data/delete manifests and builds <code>ManifestGroup</code>. The group evaluates manifest/file predicates and creates tasks with the applicable delete list. Task splitting and bin packing account for file bytes, delete bytes and open-file cost. These weights are scheduling estimates, not exact future network bytes.</p>
+<p>The Iceberg Spark connector can also use distributed planning paths. The diagram expresses logical ownership, not a guarantee that every metadata read runs in one driver thread.</p>
+<h2 id="planning-objects-and-contracts">Planning objects and contracts</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Object</th>
+<th>Important contents or role</th>
+</tr>
+</thead><tbody><tr>
+<td>Table metadata</td>
+<td>Schemas, specs, snapshots, properties and references</td>
+</tr>
+<tr>
+<td>Snapshot</td>
+<td>Visible file-state lineage and manifest-list location</td>
+</tr>
+<tr>
+<td>Manifest list</td>
+<td>Manifest descriptors and partition summaries</td>
+</tr>
+<tr>
+<td>Manifest entries</td>
+<td>File descriptors, entry status, sequence information and statistics</td>
+</tr>
+<tr>
+<td>DeleteFileIndex</td>
+<td>Match deletes to data using sequence, partition/spec, path and relevant statistics</td>
+</tr>
+<tr>
+<td>FileScanTask</td>
+<td>Data-file path/range, schema/spec, residual, applicable deletes</td>
+</tr>
+<tr>
+<td>Task group</td>
+<td>Several scan tasks grouped for an engine scheduling unit</td>
+</tr>
+<tr>
+<td>SparkInputPartition</td>
+<td>Task group plus expected schema, table/FileIO access and locality metadata</td>
+</tr>
+</tbody></table></div>
+<p>Data and delete manifests have different content roles. Do not say every individual manifest contains both data and delete files. Equality field IDs are delete-file metadata, not an ordinary data-file property.</p>
+<h2 id="runtime-pruning-sequence">Runtime pruning sequence</h2>
+<figure class="diagram" id="diagram-02-runtime-pruning-sequence"><figcaption><span>Runtime pruning sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-02-runtime-pruning-sequence" hidden>Actual size</button><a href="diagrams/02-runtime-pruning-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/02-runtime-pruning-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-02-runtime-pruning-sequence" tabindex="0" role="region" aria-label="Runtime pruning sequence"><img src="diagrams/02-runtime-pruning-sequence.svg" width="1894" height="777" alt="Runtime pruning sequence"></div></figure>
+<p>The exact empty-RDD class differs across Spark versions. Comet&#39;s supported shims and tests are the contract; do not mechanically port a class-name assumption from the newer sibling Spark checkout.</p>
+<h2 id="native-reader-flow">Native reader flow</h2>
+<figure class="diagram" id="diagram-02-native-reader-flow"><figcaption><span>Native reader flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-02-native-reader-flow" hidden>Actual size</button><a href="diagrams/02-native-reader-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/02-native-reader-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-02-native-reader-flow" tabindex="0" role="region" aria-label="Native reader flow"><img src="diagrams/02-native-reader-flow.svg" width="3027" height="235" alt="Native reader flow"></div></figure>
+<p>The diagram omits an optimization edge: the combined scan/equality-delete predicate can also participate in row-group/page filtering. The cited reader pipeline gives the precise composition order. Delete loading and data-file work may overlap.</p>
+<h2 id="deletes-and-schema-evolution">Deletes and schema evolution</h2>
+<p>Position deletes identify a data-file path and original row position. Puffin deletion vectors supply a compact positional representation with blob offsets/lengths. Several vectors in one Puffin object must not be collapsed merely because their object path matches.</p>
+<p>Equality deletes identify keys by Iceberg field ID. Applying them can require columns outside the output projection. Comet resolves keys against current and historical schemas, then includes required fields in task metadata. If a key cannot be resolved safely, the scan is rejected for native conversion.</p>
+<pre><code>Requested output fields + delete-required fields + spec-required fields -&gt; internal read/task schema -&gt; delete and predicate evaluation -&gt; requested output</code></pre>
+<p>The same raw recorded path must survive serialization for position-delete matching. URL adaptation at the I/O boundary must not silently change the identity string used by delete matching.</p>
+<h2 id="predicates-at-different-levels">Predicates at different levels</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Level</th>
+<th>What it may prove</th>
+<th>What remains</th>
+</tr>
+</thead><tbody><tr>
+<td>Partition projection</td>
+<td>A partition cannot match, or sometimes fully matches</td>
+<td>Non-partition residuals</td>
+</tr>
+<tr>
+<td>Manifest/file statistics</td>
+<td>A file cannot match</td>
+<td>Rows in surviving files still need evaluation</td>
+</tr>
+<tr>
+<td>Parquet row-group/page indexes</td>
+<td>A range cannot match</td>
+<td>Rows in surviving ranges</td>
+</tr>
+<tr>
+<td>Reader row filter</td>
+<td>A pushed predicate is true for retained rows</td>
+<td>Any omitted or weakened predicate</td>
+</tr>
+<tr>
+<td>Post-scan filter</td>
+<td>Full remaining engine predicate</td>
+<td>Exact SQL answer</td>
+</tr>
+</tbody></table></div>
+<p>For safe partial pushdown, the original predicate must imply the pushed predicate. <code>a AND b</code> implies <code>a</code>; <code>a OR b</code> does not. NOT reverses polarity. The local uncommitted serde change tracks polarity, allowing a missing AND side in positive position or a missing OR side in negative position. Committed HEAD is more conservative. This is correctness-sensitive work, not a claimed released feature.</p>
+<h2 id="concurrency-and-metrics">Concurrency and metrics</h2>
+<p>Comet sets a native data-file concurrency limit, default 1, independently of Spark&#39;s running task count. Increasing it can overlap file I/O but increases in-flight readers and memory. The reader also coalesces/fetches byte ranges; file concurrency is not the total number of storage requests.</p>
+<p>The native scan exposes <code>output_rows</code>, <code>bytes_scanned</code>, <code>elapsed_compute</code>, and <code>num_splits</code>; JVM planning metrics are bridged separately. <code>num_splits</code> is not a unique-data-file count. Actual delete-file reads contribute to scan I/O. A projected output row count may already reflect reader predicates/deletes, before later engine filters.</p>
+<h2 id="test-anchors-and-validation-gaps">Test anchors and validation gaps</h2>
+<p><code>CometIcebergNativeSuite</code> covers native-plan assertions, position/equality deletes, dropped equality keys, shared Puffin vectors, page skipping within one row group, metadata columns, historical schemas, DPP, split boundaries and scan metrics. <code>CometIcebergResidualPushdownSuite</code> exercises conversion semantics. These tests were inspected, not run here.</p>
+<p>The entire schema/spec/predicate/storage combination must pass the planner gate. See <a href="08-capabilities-and-debugging.html">capabilities</a> before generalizing support from one passing example.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="01-system-architecture.html"><small>Previous</small>System architecture</a><a href="03-parquet.html"><small>Next</small>Parquet read and write</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

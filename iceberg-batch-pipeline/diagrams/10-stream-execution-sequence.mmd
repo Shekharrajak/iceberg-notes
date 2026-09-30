@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Spark task bridge
+    participant C as Comet consumer
+  end
+  box rgb(237, 233, 254) Local physical streams
+    participant P as Projection or filter stream
+    participant S as Scan stream
+  end
+  box rgb(255, 237, 213) Reader work
+    participant R as Async file reader and decoder
+  end
+  C->>P: Request next output batch
+  P->>S: Poll child stream
+  S->>R: Request or await needed file work
+  alt Bytes not ready
+    R-->>S: Pending with wakeup arranged
+    S-->>P: Pending
+    P-->>C: Await progress through native runtime
+  else Batch ready
+    R-->>S: Return decoded Arrow batch
+    S-->>P: Yield batch
+    P->>P: Evaluate expression vectors and selection
+    P-->>C: Yield output batch
+  end

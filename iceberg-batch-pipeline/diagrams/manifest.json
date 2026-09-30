@@ -1,0 +1,440 @@
+{
+  "mermaidVersion": "11.17.2",
+  "diagrams": [
+    {
+      "id": "01-high-level-component-flow",
+      "title": "High level component flow",
+      "chapter": "01-system-architecture.md",
+      "type": "flowchart",
+      "source": "01-high-level-component-flow.mmd",
+      "svg": "01-high-level-component-flow.svg",
+      "width": 1881,
+      "height": 492,
+      "textElements": 22,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "01-end-to-end-query-sequence",
+      "title": "End to end query sequence",
+      "chapter": "01-system-architecture.md",
+      "type": "sequence",
+      "source": "01-end-to-end-query-sequence.mmd",
+      "svg": "01-end-to-end-query-sequence.svg",
+      "width": 1854,
+      "height": 913,
+      "textElements": 30,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "02-metadata-planning-flow",
+      "title": "Metadata planning flow",
+      "chapter": "02-iceberg-scan.md",
+      "type": "flowchart",
+      "source": "02-metadata-planning-flow.mmd",
+      "svg": "02-metadata-planning-flow.svg",
+      "width": 2810,
+      "height": 158,
+      "textElements": 23,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "02-runtime-pruning-sequence",
+      "title": "Runtime pruning sequence",
+      "chapter": "02-iceberg-scan.md",
+      "type": "sequence",
+      "source": "02-runtime-pruning-sequence.mmd",
+      "svg": "02-runtime-pruning-sequence.svg",
+      "width": 1894,
+      "height": 777,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "02-native-reader-flow",
+      "title": "Native reader flow",
+      "chapter": "02-iceberg-scan.md",
+      "type": "flowchart",
+      "source": "02-native-reader-flow.mmd",
+      "svg": "02-native-reader-flow.svg",
+      "width": 3027,
+      "height": 235,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "03-physical-layout",
+      "title": "Physical layout",
+      "chapter": "03-parquet.md",
+      "type": "flowchart",
+      "source": "03-physical-layout.mmd",
+      "svg": "03-physical-layout.svg",
+      "width": 1774,
+      "height": 381,
+      "textElements": 19,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "03-read-request-sequence",
+      "title": "Read request sequence",
+      "chapter": "03-parquet.md",
+      "type": "sequence",
+      "source": "03-read-request-sequence.mmd",
+      "svg": "03-read-request-sequence.svg",
+      "width": 1274,
+      "height": 982,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "03-write-layout-flow",
+      "title": "Write layout flow",
+      "chapter": "03-parquet.md",
+      "type": "flowchart",
+      "source": "03-write-layout-flow.mmd",
+      "svg": "03-write-layout-flow.svg",
+      "width": 2180,
+      "height": 148,
+      "textElements": 18,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "03-write-and-rollover-sequence",
+      "title": "Write and rollover sequence",
+      "chapter": "03-parquet.md",
+      "type": "sequence",
+      "source": "03-write-and-rollover-sequence.mmd",
+      "svg": "03-write-and-rollover-sequence.svg",
+      "width": 1201,
+      "height": 864,
+      "textElements": 27,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "04-physical-conversion-flow",
+      "title": "Physical conversion flow",
+      "chapter": "04-native-runtime-and-serde.md",
+      "type": "flowchart",
+      "source": "04-physical-conversion-flow.mmd",
+      "svg": "04-physical-conversion-flow.svg",
+      "width": 1987,
+      "height": 326,
+      "textElements": 18,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "04-native-batch-lifecycle-sequence",
+      "title": "Native batch lifecycle sequence",
+      "chapter": "04-native-runtime-and-serde.md",
+      "type": "sequence",
+      "source": "04-native-batch-lifecycle-sequence.mmd",
+      "svg": "04-native-batch-lifecycle-sequence.svg",
+      "width": 1397,
+      "height": 1088,
+      "textElements": 28,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "04-memory-reservation-flow",
+      "title": "Memory reservation flow",
+      "chapter": "04-native-runtime-and-serde.md",
+      "type": "flowchart",
+      "source": "04-memory-reservation-flow.mmd",
+      "svg": "04-memory-reservation-flow.svg",
+      "width": 1808,
+      "height": 399,
+      "textElements": 18,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "05-scheduling-component-flow",
+      "title": "Scheduling component flow",
+      "chapter": "05-distributed-execution.md",
+      "type": "flowchart",
+      "source": "05-scheduling-component-flow.mmd",
+      "svg": "05-scheduling-component-flow.svg",
+      "width": 2462,
+      "height": 295,
+      "textElements": 20,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "05-task-launch-sequence",
+      "title": "Task launch sequence",
+      "chapter": "05-distributed-execution.md",
+      "type": "sequence",
+      "source": "05-task-launch-sequence.mmd",
+      "svg": "05-task-launch-sequence.svg",
+      "width": 1893,
+      "height": 867,
+      "textElements": 28,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "05-network-and-process-boundaries",
+      "title": "Network and process boundaries",
+      "chapter": "05-distributed-execution.md",
+      "type": "flowchart",
+      "source": "05-network-and-process-boundaries.mmd",
+      "svg": "05-network-and-process-boundaries.svg",
+      "width": 1855,
+      "height": 570,
+      "textElements": 23,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "05-local-native-shuffle-flow",
+      "title": "Local native shuffle flow",
+      "chapter": "05-distributed-execution.md",
+      "type": "flowchart",
+      "source": "05-local-native-shuffle-flow.mmd",
+      "svg": "05-local-native-shuffle-flow.svg",
+      "width": 2939,
+      "height": 180,
+      "textElements": 23,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "05-shuffle-fetch-and-decode-sequence",
+      "title": "Shuffle fetch and decode sequence",
+      "chapter": "05-distributed-execution.md",
+      "type": "sequence",
+      "source": "05-shuffle-fetch-and-decode-sequence.mmd",
+      "svg": "05-shuffle-fetch-and-decode-sequence.svg",
+      "width": 1606,
+      "height": 823,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "06-write-component-flow",
+      "title": "Write component flow",
+      "chapter": "06-iceberg-write.md",
+      "type": "flowchart",
+      "source": "06-write-component-flow.mmd",
+      "svg": "06-write-component-flow.svg",
+      "width": 2487,
+      "height": 328,
+      "textElements": 25,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "06-executor-handoff-sequence",
+      "title": "Executor handoff sequence",
+      "chapter": "06-iceberg-write.md",
+      "type": "sequence",
+      "source": "06-executor-handoff-sequence.mmd",
+      "svg": "06-executor-handoff-sequence.svg",
+      "width": 1648,
+      "height": 784,
+      "textElements": 26,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "06-driver-commit-sequence",
+      "title": "Driver commit sequence",
+      "chapter": "06-iceberg-write.md",
+      "type": "sequence",
+      "source": "06-driver-commit-sequence.mmd",
+      "svg": "06-driver-commit-sequence.svg",
+      "width": 1854,
+      "height": 1072,
+      "textElements": 31,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "07-recovery-ownership-flow",
+      "title": "Recovery ownership flow",
+      "chapter": "07-fault-tolerance.md",
+      "type": "flowchart",
+      "source": "07-recovery-ownership-flow.mmd",
+      "svg": "07-recovery-ownership-flow.svg",
+      "width": 1717,
+      "height": 519,
+      "textElements": 19,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "07-read-task-retry-sequence",
+      "title": "Read task retry sequence",
+      "chapter": "07-fault-tolerance.md",
+      "type": "sequence",
+      "source": "07-read-task-retry-sequence.mmd",
+      "svg": "07-read-task-retry-sequence.svg",
+      "width": 1278,
+      "height": 919,
+      "textElements": 25,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "07-shuffle-loss-sequence",
+      "title": "Shuffle loss sequence",
+      "chapter": "07-fault-tolerance.md",
+      "type": "sequence",
+      "source": "07-shuffle-loss-sequence.mmd",
+      "svg": "07-shuffle-loss-sequence.svg",
+      "width": 1856,
+      "height": 729,
+      "textElements": 24,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "07-publication-outcome-flow",
+      "title": "Publication outcome flow",
+      "chapter": "07-fault-tolerance.md",
+      "type": "flowchart",
+      "source": "07-publication-outcome-flow.mmd",
+      "svg": "07-publication-outcome-flow.svg",
+      "width": 1271,
+      "height": 452,
+      "textElements": 16,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "08-eligibility-flow",
+      "title": "Eligibility flow",
+      "chapter": "08-capabilities-and-debugging.md",
+      "type": "flowchart",
+      "source": "08-eligibility-flow.mmd",
+      "svg": "08-eligibility-flow.svg",
+      "width": 1847,
+      "height": 495,
+      "textElements": 17,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "10-native-operator-data-flow",
+      "title": "Native operator data flow",
+      "chapter": "10-datafusion-and-connector.md",
+      "type": "flowchart",
+      "source": "10-native-operator-data-flow.mmd",
+      "svg": "10-native-operator-data-flow.svg",
+      "width": 2066,
+      "height": 148,
+      "textElements": 18,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "10-stream-execution-sequence",
+      "title": "Stream execution sequence",
+      "chapter": "10-datafusion-and-connector.md",
+      "type": "sequence",
+      "source": "10-stream-execution-sequence.mmd",
+      "svg": "10-stream-execution-sequence.svg",
+      "width": 1241,
+      "height": 799,
+      "textElements": 24,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "10-standalone-connector-flow",
+      "title": "Standalone connector flow",
+      "chapter": "10-datafusion-and-connector.md",
+      "type": "flowchart",
+      "source": "10-standalone-connector-flow.mmd",
+      "svg": "10-standalone-connector-flow.svg",
+      "width": 1630,
+      "height": 411,
+      "textElements": 19,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "10-standalone-connector-append-sequence",
+      "title": "Standalone connector append sequence",
+      "chapter": "10-datafusion-and-connector.md",
+      "type": "sequence",
+      "source": "10-standalone-connector-append-sequence.mmd",
+      "svg": "10-standalone-connector-append-sequence.svg",
+      "width": 1515,
+      "height": 821,
+      "textElements": 25,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    }
+  ]
+}
