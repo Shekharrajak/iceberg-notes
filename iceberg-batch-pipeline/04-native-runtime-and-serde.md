@@ -48,7 +48,7 @@ Adjacent native operators can form one execution block. Its leaves may be native
 | Iceberg task distribution | Common deduplicated pools plus per-partition task references | Avoid repeating shared schemas/deletes for every file/task |
 | JVM to native batch input | Arrow C Stream or compatible batch bridge | In-process addresses and release callbacks, not network serialization |
 | Native output to JVM | Arrow C Data arrays/schema plus explicit row count | Buffer lifetime must outlive consumers; some adaptations allocate |
-| Executor shuffle transport | Comet-framed compressed Arrow IPC blocks | Encode, transfer and decode; not C pointers sent over the network |
+| Executor shuffle transport | Comet-framed, optionally compressed Arrow IPC blocks | Encode, transfer and decode; not C pointers sent over the network |
 | Native write result to JVM | Binary Avro manifest payload plus written-location payload | Recover DataFiles and cleanup ownership; not a published snapshot |
 | Executor write result to driver | Serialized Iceberg WriterCommitMessage | Driver coordinates a single logical table commit |
 
@@ -96,9 +96,11 @@ Arrow arrays refer to buffers and children; a `RecordBatch` groups arrays with a
 
 Zero-copy is boundary-specific. Comet's output code explicitly materializes non-zero-offset arrays through `take` on a compatibility path. Type casts, schema adaptation, filtering, decompression and shuffle interleaving can allocate. Returning a pointer does not make the full query allocation-free.
 
-The shuffle block bridge returns a reusable DirectByteBuffer. Its bytes are valid only until the next pull. Native decoding must finish consuming those compressed bytes first; the decoded batch uses separately owned decompressed buffers.
+The shuffle block bridge returns a reusable DirectByteBuffer. Its bytes are valid only until the next pull. Native decoding must finish consuming those encoded bytes first; the decoded batch uses separately owned IPC body buffers. With compression disabled, the decoder copies the uncompressed IPC bodies rather than retaining the reusable bridge buffer. [Decoder ownership](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/ipc.rs:450).
 
 ## Memory reservation flow
+
+This diagram covers Spark off-heap mode and the task-shared `greedy_unified` or `fair_unified` pool. When Spark off-heap mode is disabled, this checkout selects an unbounded native pool for the on-heap compatibility path; those allocations still consume process memory. [Pool selection](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/config.rs:46).
 
 ```mermaid
 %%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":46},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
@@ -130,7 +132,7 @@ flowchart LR
   class D store
 ```
 
-The shared off-heap pool is an accounting budget, not a single shared allocator. Rust still allocates native memory. Multiple native plans in one Spark task share a task budget. Pool policy controls fairness and admission, but only explicitly reserved allocations are tracked.
+The shared off-heap pool is an accounting budget, not a single shared allocator. Rust still allocates native memory. Multiple native plans in one Spark task share a task budget in this mode. The admission branch depicts fallible `try_grow`; `grow` records memory that already exists and can carry an overcommit when Spark cannot grant all requested bytes. Pool policy controls fairness and admission, but only explicitly reserved allocations are tracked. [Reservation accounting](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/spark_memory.rs:55).
 
 Per-batch kernel buffers, decompression, readers, request buffers, runtime overhead, JVM Arrow buffers and allocator fragmentation can sit outside reservations. The container can run out of memory while the reservation pool appears healthy.
 

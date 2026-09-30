@@ -16,8 +16,11 @@
 <li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
 <li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
 <li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
-<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="09-source-ledger.md">Markdown source</a></header><article><h1 id="source-revisions-evidence-and-validation-limits">Source revisions evidence and validation limits</h1>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="09-source-ledger.md">Markdown source</a></header><article><h1 id="source-revisions-evidence-and-validation-limits">Source revisions evidence and validation limits</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#checkout-scope">Checkout scope</a></li>
 <li><a href="#iceberg-planning">Iceberg planning</a></li>
 <li><a href="#comet-scan">Comet scan</a></li>
@@ -33,6 +36,7 @@
 <li><a href="#datafusion-and-arrow">DataFusion and Arrow</a></li>
 <li><a href="#tests-inspected">Tests inspected</a></li>
 <li><a href="#arrow-and-hardware-addendum">Arrow and hardware addendum</a></li>
+<li><a href="#metadata-and-distributed-compaction-addendum">Metadata and distributed compaction addendum</a></li>
 <li><a href="#revalidation-procedure">Revalidation procedure</a></li></ul></nav></details>
 <p><a href="index.html">Index</a></p>
 <h2 id="checkout-scope">Checkout scope</h2>
@@ -80,7 +84,7 @@
 </tbody></table></div>
 <p><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/Cargo.toml, line 40; opens the local source file" class="source-link">Comet dependency declarations</a> specify DataFusion 55.1.0, Arrow/Parquet 59.2.0 and the Iceberg Rust revision above. The separate DataFusion and Arrow checkouts are conceptual/API references, not substitutes for verifying resolved build dependencies.</p>
 <p>The Comet worktree has existing local edits in the Iceberg scan serde and native scan test suite, plus two benchmark files. The notable semantic change allows safe partial residual weakening using predicate polarity. It is explicitly labelled uncommitted throughout the notes. No source edits were made for this notebook. Spark has unrelated untracked Kafka work; Iceberg has unrelated untracked research files. Those were left untouched.</p>
-<p>The older note and presentation were preserved. The documentation collection is the only requested repository addition. No commit, push, benchmark, engine build or engine test run is implied.</p>
+<p>The initial notebook creation preserved the older note and presentation. A subsequent source-backed correctness audit updates their manifest, driver/executor, commit-outcome and benchmark explanations alongside the relevant chapters. Publishing these documentation corrections does not imply a new benchmark, engine build or engine test verdict.</p>
 <h2 id="iceberg-planning">Iceberg planning</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
 <th>Entry point</th>
@@ -554,6 +558,10 @@
 </tbody></table></div>
 <p>The cached 59.3.0 aggregation/filter implementations were also checked. The BMI2 bitmap <code>compress</code>/<code>expand</code> helpers in Arrow 60.0.0 were absent from that cached 59.3.0 buffer source; they must not be credited to the checked Comet dependency. Local Cargo source links require those caches to remain available. Release numbers alone do not prove which binary ran the saved benchmark.</p>
 <p>Hardware explanations use official LLVM, Rust, Intel, Arm, Linux and Berkeley Lab references. They are explanatory cost models, not measurements of this machine. No assembly, hardware counters, Arrow tests or rewrite benchmarks were collected/run for this addendum.</p>
+<h2 id="metadata-and-distributed-compaction-addendum">Metadata and distributed compaction addendum</h2>
+<p>Chapters <a href="16-iceberg-metadata-and-snapshots.html">16</a>, <a href="17-distributed-iceberg-and-compaction.html">17</a> and <a href="18-iceberg-tests-and-benchmark-evidence.html">18</a> trace the same recorded Iceberg and Comet HEADs through manifest reuse, catalog commit mechanisms, distributed manifest planning, rewrite commit groups and concurrent-delete validation. Relevant implementation and test links appear next to each claim.</p>
+<p>The inspection found v4 manifest code in the local Iceberg reference tree. V2/v3 examples and Avro-manifest descriptions must not be interpreted as an exhaustive description of v4, or as a claim that Comet supports those newer native-write paths. The local Spark 3.5 runtime integration class is <code>TestRoundTrip</code>; cross-version guides may name a different smoke test.</p>
+<p>Existing local XML reports were inspected separately from test source. They have mixed dates and unverified binary/source provenance, including one selected scan test cancelled when SparkContext shut down. No current engine test pass, benchmark gain or live CI status is asserted. Benchmark analysis distinguishes metadata-only replacement/commit work from real Spark row compaction and flags execution-enabled comparisons that do not isolate scan CPU alone.</p>
 <h2 id="revalidation-procedure">Revalidation procedure</h2>
 <ol>
 <li>Record every relevant checkout HEAD and dirty status again.</li>

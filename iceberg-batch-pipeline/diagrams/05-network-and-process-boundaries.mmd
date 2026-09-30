@@ -13,7 +13,7 @@ flowchart LR
   subgraph EB["Executor B"]
     JB["JVM task and shuffle fetcher"]
     NB["Native shuffle decode and operators"]
-    JB -- "JNI compressed-buffer handoff" --> NB
+    JB -- "JNI encoded-buffer handoff" --> NB
   end
   subgraph EXT["External storage and catalog"]
     C["Catalog service when remote"]

@@ -32,6 +32,8 @@ This is a **TPC-H-derived development comparison**, not a published TPC-H QphH r
 
 The JSON is deliberately named **transcription**: it was created from the talk's rounded table, not recovered from a benchmark process. The plans and chart images are copied unchanged from the existing talk assets so the notebook remains self-contained.
 
+The archived base chart's title says JVM scan versus native Rust scan, but the comparison changes eligible scan, compute and shuffle execution. It is not a scanner-only experiment. The corrected presentation uses a newly rendered execution-comparison chart from the same rounded timing rows; the original PNG remains preserved here for provenance.
+
 ## Historical conditions versus current defaults
 
 The [preserved presentation](/Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html:998) reports macOS Apple Silicon, Spark 3.5.8, local mode, SF1, 22 queries and one measured base-table iteration. It also reports matching result hashes and native scan plans for all queries. Exact machine model, cores used, cache policy, raw hashes, Comet SHA/JAR checksum and full Spark configuration were not recovered.
@@ -84,7 +86,7 @@ Seconds below are transcribed from the existing deck. Ratios and savings are rec
 
 ![Preserved historic local SF1 chart comparing Spark Iceberg with Comet Iceberg](assets/tpch/tpch-sf1-jvm-vs-native.png)
 
-The original deck reports totals of **29.33 s Spark and 14.56 s Comet**, with a **2.19x geometric mean**. Adding its displayed query rows gives **29.33 s and 14.59 s**. From those rounded rows, the ratio of sums is **2.0103x**, total savings are **14.74 s**, and the geometric mean is **2.1857x**. The 0.03 s total difference may be rounding or transcription; without raw samples we cannot settle it. Preserve the distinction instead of manufacturing extra precision.
+The historical deck reported totals of **29.33 s Spark and 14.56 s Comet**, with a **2.19x geometric mean**. Adding its displayed query rows gives **29.33 s and 14.59 s**. From those rounded rows, the ratio of sums is **2.0103x**, total savings are **14.74 s**, and the geometric mean is **2.1857x**. The corrected presentation now displays these rounded-row sums and consistently recalculated ratios. The historical 0.03 s total difference may be rounding or transcription; without raw samples we cannot settle it. Preserve the distinction instead of manufacturing extra precision.
 
 ```text
 query ratio = Spark query time / Comet query time

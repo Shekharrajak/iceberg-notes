@@ -7,7 +7,7 @@
       "title": "Iceberg batch pipeline source notebook",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "5d70341c3473b1d16945735333057da51f8adc6258d937eca6f751a7675c3bc0"
+      "sha256": "f80b1530d3e076f25ab20671bd4161cf2bf2aeee55bc22a182d20a83fb927730"
     },
     {
       "source": "01-system-architecture.md",
@@ -39,7 +39,7 @@
       "title": "Native execution serialization and memory",
       "headings": 8,
       "diagrams": 3,
-      "sha256": "b07c1700aabb6f360b9924257efe092b44d7e9082c76e64064e6f938615b4f19"
+      "sha256": "ff65bb34baec3b1ac8844d2f7474bc83bea315b3f130d27619ba8e90d778ff61"
     },
     {
       "source": "05-distributed-execution.md",
@@ -47,7 +47,7 @@
       "title": "Distributed scheduling networking and shuffle",
       "headings": 12,
       "diagrams": 5,
-      "sha256": "794e43147d49ca3d484a346fd8df34a9edddd9838ac12275ce255738e71be9c7"
+      "sha256": "13c49b19fc1afa9c263eede4e99a8df5c59fe2640c3c2d49a73854556c897c7a"
     },
     {
       "source": "06-iceberg-write.md",
@@ -55,7 +55,7 @@
       "title": "Iceberg file writing and snapshot publication",
       "headings": 9,
       "diagrams": 3,
-      "sha256": "6145130e4a3c8304c821632b8b18ebcd7141a5e3f8b64aa3024d173482943a2b"
+      "sha256": "bc92404a24af535b9504d0c3bb0a1d3d23d031dbdc481a47bfe14a820a4cd151"
     },
     {
       "source": "07-fault-tolerance.md",
@@ -77,9 +77,9 @@
       "source": "09-source-ledger.md",
       "html": "09-source-ledger.html",
       "title": "Source revisions evidence and validation limits",
-      "headings": 17,
+      "headings": 18,
       "diagrams": 0,
-      "sha256": "c8f71bfb78b8af18ac078c3c2255bdda1992a06bf7eff61f57b8c7d079c39166"
+      "sha256": "7908c68b06bf3772ae9b98a149bd761573e817b42fc90de851a65041de61fc1b"
     },
     {
       "source": "10-datafusion-and-connector.md",
@@ -103,7 +103,7 @@
       "title": "TPC-H Spark versus Comet benchmark findings",
       "headings": 15,
       "diagrams": 2,
-      "sha256": "8cc461befcf4b5205a8e195eeb6c08c188a9a7e2ee5c5a4887db0cef9ace3634"
+      "sha256": "c1345930099346920c6052be65bada2afe32ab85f519ac7a993d1e136ca6b8e1"
     },
     {
       "source": "13-arrow-memory-and-kernels.md",
@@ -119,7 +119,7 @@
       "title": "Vectorization SIMD and hardware costs in batch execution",
       "headings": 15,
       "diagrams": 2,
-      "sha256": "72456b067e08c45121aaaa1acf3a328e66f05a1fb30be808bb095cbe0f07b5b4"
+      "sha256": "6358e7cc14db291dff56705687f631bf1fef91d986fde9b04c94d50473ef78ce"
     },
     {
       "source": "15-arrow-in-iceberg-scan-and-rewrite.md",
@@ -130,12 +130,36 @@
       "sha256": "4e62b33a632a1dea86e52d2adb289e9e5006f1ade65a6dde2d111848afb7d00b"
     },
     {
+      "source": "16-iceberg-metadata-and-snapshots.md",
+      "html": "16-iceberg-metadata-and-snapshots.html",
+      "title": "Iceberg metadata manifests snapshots and commit concurrency",
+      "headings": 12,
+      "diagrams": 2,
+      "sha256": "2bdf4c51f745ad31cc15d0d688b5733c719df4bfd68c0e2e76a70423b00d0eee"
+    },
+    {
+      "source": "17-distributed-iceberg-and-compaction.md",
+      "html": "17-distributed-iceberg-and-compaction.html",
+      "title": "Distributed Iceberg planning execution and compaction",
+      "headings": 11,
+      "diagrams": 3,
+      "sha256": "4b7abff3614c97f7470eac29a683f4714455d79dee0652706693c095493412b8"
+    },
+    {
+      "source": "18-iceberg-tests-and-benchmark-evidence.md",
+      "html": "18-iceberg-tests-and-benchmark-evidence.html",
+      "title": "Iceberg integration tests benchmark coverage and evidence gaps",
+      "headings": 12,
+      "diagrams": 2,
+      "sha256": "1a79b43d4004f4f1eea6012ed39e2ba9414d6495d7a794dc5233567784ebca7f"
+    },
+    {
       "source": "VALIDATION.md",
       "html": "VALIDATION.html",
       "title": "Documentation validation",
-      "headings": 4,
+      "headings": 6,
       "diagrams": 0,
-      "sha256": "7a5a2594ae75b0aa5df818b690f3bebd811a1772f5014128e481a13af10d9512"
+      "sha256": "9855ccb054918df8b7c3a59f3241e3f2baae7c666be78ade319ef9f2cf19dca6"
     },
     {
       "source": "scripts/README.md",
@@ -143,7 +167,7 @@
       "title": "Diagram rendering and validation",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "686d75a7908a712e95225c287ed1705dd9aa10bde25c580629a09d2cc197db14"
+      "sha256": "15903730813c86aa9ac5416982d0d8712fd82dad0a269b684ab20b20a96e4f94"
     }
   ]
 }

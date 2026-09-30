@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iceberg integration tests benchmark coverage and evidence gaps | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html" aria-current="page"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="18-iceberg-tests-and-benchmark-evidence.md">Markdown source</a></header><article><h1 id="iceberg-integration-tests-benchmark-coverage-and-evidence-gaps">Iceberg integration tests benchmark coverage and evidence gaps</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#evidence-verdict">Evidence verdict</a></li>
+<li><a href="#tests-at-each-boundary">Tests at each boundary</a></li>
+<li><a href="#historical-local-test-reports">Historical local test reports</a></li>
+<li><a href="#benchmark-inventory-and-timing-boundaries">Benchmark inventory and timing boundaries</a></li>
+<li><a href="#saved-local-physical-compaction-comparison">Saved local physical compaction comparison</a></li>
+<li><a href="#comet-write-benchmark-sequence">Comet write benchmark sequence</a></li>
+<li><a href="#focused-validation-commands">Focused validation commands</a></li>
+<li><a href="#experiment-matrix-for-distributed-scale">Experiment matrix for distributed scale</a></li>
+<li><a href="#remaining-gaps">Remaining gaps</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="16-iceberg-metadata-and-snapshots.html">Metadata and snapshots</a> | <a href="17-distributed-iceberg-and-compaction.html">Distributed compaction</a></p>
+<p>There is substantial source coverage for metadata commits, distributed planning, rewrite failures, native write engagement and delete-correct compaction. That does not establish a measured cluster-scale Comet advantage. This chapter separates what tests assert, what benchmark code times, what old local reports show, and what still needs a controlled run.</p>
+<h2 id="evidence-verdict">Evidence verdict</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Evidence class</th>
+<th>What was checked</th>
+<th>Verdict</th>
+</tr>
+</thead><tbody><tr>
+<td>Iceberg core tests</td>
+<td>Manifest/file sequences, metadata conflicts and rewrite validation</td>
+<td>Relevant source coverage exists; not executed in this update</td>
+</tr>
+<tr>
+<td>Iceberg Spark tests</td>
+<td>Distributed planning modes, partial progress, failed commits and unknown outcomes</td>
+<td>Integration behavior is exercised by local Spark fixtures; not proof of multi-host scale</td>
+</tr>
+<tr>
+<td>Comet tests</td>
+<td>Native scan/write nodes, compaction with deletes, fallback and task retry</td>
+<td>Several tests explicitly verify engagement, not merely successful SQL</td>
+</tr>
+<tr>
+<td>Historical local XML</td>
+<td>Four Comet-related reports and three Iceberg core reports</td>
+<td>Mixed ages; one scan report records a cancellation failure; no fresh revision-matched verdict</td>
+</tr>
+<tr>
+<td>Benchmark implementations</td>
+<td>Manifest I/O, planning, metadata rewrite, Spark compaction, Comet read/write</td>
+<td>Different timing boundaries; they must not be presented as interchangeable results</td>
+</tr>
+<tr>
+<td>Saved maintenance comparison</td>
+<td>Existing local <code>rewrite_data_files</code> JSON, six measured timing samples and recorded correctness summaries</td>
+<td>4.97x ratio of medians for that tiny-file local fixture; not a fresh run or a cluster-scale result</td>
+</tr>
+<tr>
+<td>New performance results</td>
+<td>None collected</td>
+<td>No new speedup, concurrency optimum or capacity limit is claimed</td>
+</tr>
+</tbody></table></div>
+<p>Inspection date: 2026-09-30. Iceberg HEAD is <code>5e7169168db3d34e29354c6f59ec4d6e420b8d2d</code>; Comet HEAD is <code>184accac5b9cee6b761a6673c73c263adedef45e</code>. The Comet tree has pre-existing scan/test and benchmark-config modifications. Existing JARs include several version/profile generations, so their presence is not proof that a current-source test or benchmark is ready to run with matching binaries.</p>
+<h2 id="tests-at-each-boundary">Tests at each boundary</h2>
+<figure class="diagram" id="diagram-18-tests-at-each-boundary"><figcaption><span>Tests at each boundary</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-18-tests-at-each-boundary" hidden>Actual size</button><a href="diagrams/18-tests-at-each-boundary.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/18-tests-at-each-boundary.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-18-tests-at-each-boundary" tabindex="0" role="region" aria-label="Tests at each boundary"><img src="diagrams/18-tests-at-each-boundary.svg" width="1306" height="233" alt="Tests at each boundary"></div></figure>
+<p>Edges show how evidence builds across boundaries, not automatic test invocations or a guarantee that the final deployment test has been performed.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Test source</th>
+<th>Concrete behavior worth reading</th>
+<th>Limit</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java, line 316; opens the local source file" class="source-link">TestRewriteFiles</a></td>
+<td><code>testRewriteDataAndAssignOldSequenceNumber</code> checks old data sequence with a new manifest sequence; later cases reject conflicting DV replacements</td>
+<td>Core metadata semantics, not Parquet throughput</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/hadoop/TestHadoopCommits.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/hadoop/TestHadoopCommits.java, line 195; opens the local source file" class="source-link">TestHadoopCommits</a></td>
+<td>Failed/stale commits, stale version hint and concurrent fast appends</td>
+<td>Hadoop implementation; not every catalog backend</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/TestSparkDistributedDataScanReporting.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/TestSparkDistributedDataScanReporting.java, line 35; opens the local source file" class="source-link">TestSparkDistributedDataScanReporting</a></td>
+<td>v2/v3 crossed with LOCAL/DISTRIBUTED data and delete planning; inherited scan/reporting assertions</td>
+<td>Its Spark session is <code>local[2]</code>, not a multi-node network test</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java, line 1044; opens the local source file" class="source-link">TestRewriteDataFilesAction</a></td>
+<td>Single/partial commits, parallel rewrite failures, failed commit batches, unchanged data, cleanup and unknown commit outcome</td>
+<td>Fault injection and fixture assertions, not observed production failure rates</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark-runtime/src/integration/java/org/apache/iceberg/spark/TestRoundTrip.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark-runtime/src/integration/java/org/apache/iceberg/spark/TestRoundTrip.java, line 41; opens the local source file" class="source-link">TestRoundTrip</a></td>
+<td>Runtime integration source exercises create/insert/MERGE/query, snapshot counts and DDL</td>
+<td>Packaging/runtime smoke coverage, not exhaustive concurrency coverage</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 48; opens the local source file" class="source-link">CometIcebergRewriteActionSuite</a></td>
+<td>Bin-pack, sort and single-column Z-order assert native read/write engagement; sort cases check exchange/sort; MOR compaction materializes only surviving rows</td>
+<td>Single-column Z-order test is not a general multidimensional performance result</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala, line 493; opens the local source file" class="source-link">CometIcebergWriteActionSuite</a></td>
+<td>Abort leaves table unchanged; gated concurrent append makes serializable DELETE conflict; native failed tasks/retries clean known output</td>
+<td>Exact tests have separate gates and conditions; don&#39;t infer every case runs natively</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteDetectionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteDetectionSuite.scala, line 1; opens the local source file" class="source-link">CometIcebergWriteDetectionSuite</a></td>
+<td>Native writer eligibility and fallback surface</td>
+<td>Planning support, not file correctness or speed by itself</td>
+</tr>
+</tbody></table></div>
+<p>The runtime test class in the local Iceberg Spark 3.5 tree is <code>TestRoundTrip</code>, not the <code>SmokeTest.java</code> name in Comet&#39;s cross-version testing guide. This is a concrete example of why a guide or another pinned Iceberg release must not replace inspection of the intended checkout.</p>
+<h3 id="strong-evidence-in-the-comet-compaction-test">Strong evidence in the Comet compaction test</h3>
+<p>The MOR compaction case creates a v2 file with three rows, adds a positional delete and an equality delete, then rewrites the data. It checks:</p>
+<ol>
+<li>Only the expected row is visible before the rewrite.</li>
+<li>Both delete kinds are actually present, preventing a metadata-only DELETE from accidentally substituting for the intended workload.</li>
+<li>The rewrite plans contain native scan and native writer nodes.</li>
+<li>Current data files were written through the native path.</li>
+<li>Visible rows are unchanged and physical data-file record count drops from three to one.</li>
+</ol>
+<p>That last check distinguishes physically applying deletes during compaction from merely leaving old deleted rows in replacement files and hiding them again later. The same suite deliberately expects <strong>no Comet operators</strong> for its position-delete-file rewrite path. Data-file compaction support is not blanket support for every maintenance action. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 161; opens the local source file" class="source-link">MOR test</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 93; opens the local source file" class="source-link">delete-file rewrite fallback</a>.</p>
+<h3 id="why-a-green-upstream-suite-can-still-hide-fallback">Why a green upstream suite can still hide fallback</h3>
+<p>Comet&#39;s Iceberg CI adaptation enables the plugin, native scan, split writer, native writer and local-table scan where configured. Inline <code>VALUES</code> inputs otherwise risk keeping a non-native child and preventing native-write conversion. The reusable workflow also captures write-report records. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/diffs/iceberg/1.11.0.diff" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/diffs/iceberg/1.11.0.diff, line 55; opens the local source file" class="source-link">Applied test configuration</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/.github/workflows/iceberg_spark_test_reusable.yml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/.github/workflows/iceberg_spark_test_reusable.yml, line 157; opens the local source file" class="source-link">CI report setup</a>.</p>
+<p><code>IcebergWriteReportListener</code> distinguishes <code>native</code>, <code>jvm</code> and <code>spark</code>: respectively the native writer, split plan with a JVM writer, and Spark&#39;s own write path. These execution records and fallback reasons are better engagement evidence than a count of successful SQL statements. This chapter checked the reporting implementation/configuration, not a current GitHub Actions run. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteReportListener.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteReportListener.scala, line 94; opens the local source file" class="source-link">Listener</a>.</p>
+<h2 id="historical-local-test-reports">Historical local test reports</h2>
+<p>Only report headers and the single failure&#39;s identifying fields were read for this summary. JVM properties, environment values and full logs were not copied into the notes. Modification times below are filesystem timestamps in UTC, not proof of the source revision used to produce a report.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Existing report</th>
+<th>Tests</th>
+<th>Failures / errors</th>
+<th>File modified UTC</th>
+<th>Interpretation</th>
+</tr>
+</thead><tbody><tr>
+<td>CometIcebergNativeSuite</td>
+<td>1</td>
+<td>1 / 0</td>
+<td>2026-09-28 06:19:27</td>
+<td>One selected test failed with SparkContext shutdown cancellation</td>
+</tr>
+<tr>
+<td>CometIcebergNativeScanSuite</td>
+<td>8</td>
+<td>0 / 0</td>
+<td>2026-09-20 07:03:33</td>
+<td>Old serializer/planning-suite result, not a fresh scan integration run</td>
+</tr>
+<tr>
+<td>CometIcebergSqlFileTestSuite</td>
+<td>5</td>
+<td>0 / 0</td>
+<td>2026-05-13 12:05:03</td>
+<td>Older SQL-file test result</td>
+</tr>
+<tr>
+<td>IcebergRESTVendedS3ProviderTest</td>
+<td>3</td>
+<td>0 / 0</td>
+<td>2026-09-02 17:49:15</td>
+<td>Credential-provider tests, not cloud scan throughput</td>
+</tr>
+<tr>
+<td>Iceberg TestSnapshotChanges</td>
+<td>17</td>
+<td>0 / 0</td>
+<td>2026-07-05 07:02:45</td>
+<td>Older core result</td>
+</tr>
+<tr>
+<td>Iceberg TestSnapshotManager</td>
+<td>168</td>
+<td>0 / 0</td>
+<td>2026-07-05 07:02:45</td>
+<td>Older core result</td>
+</tr>
+<tr>
+<td>Iceberg TestWapWorkflow</td>
+<td>56</td>
+<td>0 / 0</td>
+<td>2026-07-05 07:02:45</td>
+<td>Older core result</td>
+</tr>
+</tbody></table></div>
+<p>The failed selected test is <code>partially supported AND in positive position does not drop rows</code>; its report says <code>Job 0 cancelled because SparkContext was shut down</code>. That is evidence of an unsuccessful historical run, not evidence that the named row-preservation assertion failed. The cause of the shutdown and the exact binary/source provenance were not established here. Do not report this as either a new regression diagnosis or a green current suite.</p>
+<p>Report locations: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/target/surefire-reports/TEST-org.apache.comet.CometIcebergNativeSuite.xml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/target/surefire-reports/TEST-org.apache.comet.CometIcebergNativeSuite.xml, line 1; opens the local source file" class="source-link">Comet selected scan report</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/target/surefire-reports/TEST-org.apache.comet.serde.operator.CometIcebergNativeScanSuite.xml" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/target/surefire-reports/TEST-org.apache.comet.serde.operator.CometIcebergNativeScanSuite.xml, line 1; opens the local source file" class="source-link">Comet serializer report</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/build/test-results/test/TEST-org.apache.iceberg.TestSnapshotManager.xml" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/build/test-results/test/TEST-org.apache.iceberg.TestSnapshotManager.xml, line 1; opens the local source file" class="source-link">Iceberg core report</a>. Build outputs are ephemeral and may be replaced by later runs.</p>
+<h2 id="benchmark-inventory-and-timing-boundaries">Benchmark inventory and timing boundaries</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Benchmark source</th>
+<th>What its timed method measures</th>
+<th>Important workload boundary</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/ManifestBenchmark.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/ManifestBenchmark.java, line 45; opens the local source file" class="source-link">ManifestBenchmark</a></td>
+<td>Manifest entry read/write in supported version/format combinations</td>
+<td>Synthetic DataFile descriptors, varying column count and partitioning; includes v4 Avro/Parquet source paths</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark-extensions/src/jmh/java/org/apache/iceberg/spark/PlanningBenchmark.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark-extensions/src/jmh/java/org/apache/iceberg/spark/PlanningBenchmark.java, line 106; opens the local source file" class="source-link">PlanningBenchmark</a></td>
+<td>Local/distributed file-task planning with filters/statistics and different delete layouts</td>
+<td>30 partitions times 50,000 data-file descriptors; not a 1.5-million-Parquet-file full row scan</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/RewriteDataFilesBenchmark.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/RewriteDataFilesBenchmark.java, line 81; opens the local source file" class="source-link">RewriteDataFilesBenchmark</a></td>
+<td><code>newRewrite</code> metadata commit followed by rollback commit</td>
+<td>50,000 to 2,000,000 file descriptors and selected rewrite percentages; no Spark row decode/sort/encode in the timed method</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/jmh/java/org/apache/iceberg/spark/action/IcebergSortCompactionBenchmark.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/jmh/java/org/apache/iceberg/spark/action/IcebergSortCompactionBenchmark.java, line 65; opens the local source file" class="source-link">IcebergSortCompactionBenchmark</a></td>
+<td>Real Spark <code>rewriteDataFiles().sort(...).execute()</code></td>
+<td>Generates 8 times 7,500,000 rows; table setup/cleanup is per iteration; session uses <code>local[*]</code></td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergReadBenchmark.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergReadBenchmark.scala, line 35; opens the local source file" class="source-link">CometIcebergReadBenchmark</a></td>
+<td>Single-column Iceberg SQL aggregate with Spark versus Comet settings</td>
+<td>128 times 1024 times 1024 rows across seven numeric/Boolean types; includes aggregation, not just reader decode</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala, line 85; opens the local source file" class="source-link">CometIcebergWriteBenchmark</a></td>
+<td>Unpartitioned insert, clustered insert, fanout insert, copy-on-write DELETE</td>
+<td>4 times 1024 times 1024 rows, eight source files, local temporary warehouse, <code>local[5]</code>, three execution arms</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/benchmarks/tpc/tpcbench.py, line 1; opens the local source file" class="source-link">TPC harness</a></td>
+<td>Analytical queries with saved timing/hash/plan options</td>
+<td>Existing SF1 evidence is qualified in chapter 12; not a maintenance or concurrent-writer benchmark</td>
+</tr>
+</tbody></table></div>
+<p>Two naming traps matter. A benchmark containing <code>RewriteDataFiles</code> can measure metadata replacement rather than physical compaction. A benchmark containing <code>Read</code> can include aggregation and other operators. Source comments are useful entry points, but the timed block defines the measurement.</p>
+<p>The checked JMH configuration uses JDK 17 or 21 and sets <code>-Xmx32g</code>. Some benchmark classes have large parameter matrices and substantial setup. They were not launched implicitly for a documentation request. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/jmh.gradle" title="/Users/srajak/Documents/repos/oss/apache/iceberg/jmh.gradle, line 20; opens the local source file" class="source-link">JMH configuration</a>.</p>
+<h2 id="saved-local-physical-compaction-comparison">Saved local physical compaction comparison</h2>
+<p>The presentation already contains a local <code>rewrite_data_files</code> result, preserved here as <a href="assets/maintenance/iceberg-maintenance-jvm-vs-comet.json">maintenance JSON</a>. This saved artifact is a different evidence class from the benchmark implementations above. It records Spark 3.5.8, Iceberg 1.8.1, Comet 1.1.0-SNAPSHOT, <code>local[4]</code>, AQE disabled, four shuffle partitions, 2 GiB off-heap memory and native data-file concurrency four. The JSON does not embed an execution timestamp; its existence does not establish a revision-matched result for the current source check.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Recorded measurement</th>
+<th>JVM seconds</th>
+<th>Comet seconds</th>
+</tr>
+</thead><tbody><tr>
+<td>Measured trial 1</td>
+<td>1.626433</td>
+<td>0.327444</td>
+</tr>
+<tr>
+<td>Measured trial 2</td>
+<td>1.625134</td>
+<td>0.361036</td>
+</tr>
+<tr>
+<td>Measured trial 3</td>
+<td>1.635873</td>
+<td>0.325614</td>
+</tr>
+<tr>
+<td>Median</td>
+<td>1.626433</td>
+<td>0.327444</td>
+</tr>
+</tbody></table></div>
+<p><code>1.626433 / 0.327444 = 4.967...</code>, rounded to <strong>4.97x</strong>. The JSON separately records a 4.825x paired geometric mean. Its method describes one warmup and three measured trials per arm, alternated engine order, and a fresh JVM-created equivalent table for each trial. Both arms ran in one Spark application; the JVM arm disabled Comet planning rules. These are recorded method details rather than a reconstruction from independently retained trial logs.</p>
+<p>The input summary is 500,000 physical rows, 490,000 visible rows, 144 data files, 72 position-delete files and 2,492,804 data bytes: about 16.9 KiB per data file. The correctness summary records 144 rewritten data files, one added file, zero failed data files and 490,000 physical output rows. It reports matched row count, price sum and row-hash sum for every trial, and <strong>72 remaining delete files after this data-file rewrite</strong>. Applying deletes to the replacement rows does not itself demonstrate delete-file cleanup.</p>
+<p>The artifact lists JVM plan nodes <code>BatchScan</code>, <code>ColumnarToRow</code>, <code>AppendData</code> and Comet nodes <code>CometIcebergNativeScan</code>, <code>CometIcebergWrite</code>, <code>IcebergCommit</code>. These node lists support its stated execution-path summary, but they are not full initial/final plans. Its representative data-plane and scan/write timings are illustrative recorded phase observations, not independent totals to sum or ratios to label as isolated SIMD gains.</p>
+<p>This is a local tiny-file fixture, not a multi-host networking or production-size result. The JSON lacks full plans, a complete executable fixture/run log and exact source/binary hashes for reproduction. It also states that the Comet output file was larger, so the speedup is not a storage-size improvement. Preserve those limitations when quoting 4.97x, and repeat with isolated applications, representative remote storage, controlled caches and saved plans/results before extrapolating. No fresh benchmark was executed during this documentation audit.</p>
+<h2 id="comet-write-benchmark-sequence">Comet write benchmark sequence</h2>
+<figure class="diagram" id="diagram-18-comet-write-benchmark-sequence"><figcaption><span>Comet write benchmark sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-18-comet-write-benchmark-sequence" hidden>Actual size</button><a href="diagrams/18-comet-write-benchmark-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/18-comet-write-benchmark-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-18-comet-write-benchmark-sequence" tabindex="0" role="region" aria-label="Comet write benchmark sequence"><img src="diagrams/18-comet-write-benchmark-sequence.svg" width="1872" height="134" alt="Comet write benchmark sequence"></div></figure>
+<p>The benchmark verifies a preflight execution before timing each arm. This is not a full result-hash validation of every timed iteration. Target-table reset occurs before the timer so repeated inserts/deletes do not change the workload accidentally. Timed SQL includes publication; catalog work is not subtracted from native execution time. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala, line 322; opens the local source file" class="source-link">Timer block</a>.</p>
+<p>The checked write benchmark requests at least five measured iterations, with 500 ms warmup and minimum-time thresholds. Treat these as harness controls, not an assertion that every environment executes exactly one warmup and five measurements. Preserve the actual iteration samples and spread. The JVM and native paths can have different warmup, allocation and file-layout behavior.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Arm</th>
+<th>Configuration</th>
+<th>Proper interpretation</th>
+</tr>
+</thead><tbody><tr>
+<td>Spark</td>
+<td>Comet disabled</td>
+<td>Stock baseline; verification rejects unexpected Comet nodes</td>
+</tr>
+<tr>
+<td>Comet scan</td>
+<td>Comet execution enabled, split/native write flags off</td>
+<td>Eligible native input/compute with JVM writing; not a pure scanner-only isolation</td>
+</tr>
+<tr>
+<td>Comet scan + native write</td>
+<td>Comet execution plus split/native writer flags</td>
+<td>Adds eligible native writer path; output layout can differ</td>
+</tr>
+</tbody></table></div>
+<p>Preflight checks row count, presence/absence of Comet, expected exchange and sort, and writer engagement. Unexpected native writing in the JVM-write arm is an error. Missing native writing in the native arm produces a warning and a <strong>fell back to JVM writer</strong> label, rather than silently presenting it as a native writer measurement. Read that label before quoting results. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergWriteBenchmark.scala, line 369; opens the local source file" class="source-link">Verification</a>.</p>
+<p>If baseline, JVM-writer Comet and native-writer Comet times are <code>Ts</code>, <code>Tj</code>, and <code>Tn</code>, then the end-to-end ratios are <code>Ts/Tj</code>, <code>Ts/Tn</code>, and <code>Tj/Tn</code>. The last ratio isolates the configuration change more closely, but is still statement time, not the pure encoder&#39;s CPU factor. Physical output boundaries, compression, file counts, shuffle and metadata reconciliation can differ. Row counts alone cannot establish value-level equivalence.</p>
+<p>The read benchmark enables Comet execution alongside its native Iceberg scan and executes <code>sum</code> queries. Its timed cases do not perform the write benchmark&#39;s explicit engagement preflight or a Spark-versus-Comet result hash comparison. Capture the executed plan and compare results independently before making a reader speedup claim. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergReadBenchmark.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/spark/sql/benchmark/CometIcebergReadBenchmark.scala, line 51; opens the local source file" class="source-link">Read cases</a>.</p>
+<h2 id="focused-validation-commands">Focused validation commands</h2>
+<p>These are proposed commands, not commands executed for this update. Use an isolated, writable checkout and matching JDK/dependencies. Test resources can create/delete their own temporary tables; do not repoint them at production data.</p>
+<p>Iceberg core metadata and conflict coverage:</p>
+<pre><code>./gradlew :iceberg-core:test \
+  --tests org.apache.iceberg.TestRewriteFiles \
+  --tests org.apache.iceberg.hadoop.TestHadoopCommits</code></pre>
+<p>Iceberg Spark planning and rewrite integration, with the version/profile selected explicitly:</p>
+<pre><code>./gradlew -DsparkVersions=3.5 -DscalaVersion=2.12 \
+  -DflinkVersions= -DkafkaVersions= \
+  :iceberg-spark:iceberg-spark-3.5_2.12:test \
+  --tests org.apache.iceberg.TestSparkDistributedDataScanReporting \
+  --tests org.apache.iceberg.spark.actions.TestRewriteDataFilesAction</code></pre>
+<p>Comet-focused integration from the Comet repository, after building matching native/JVM code:</p>
+<pre><code>make core
+./mvnw test -Pspark-3.5 -Dtest=none \
+  -Dsuites=&quot;org.apache.comet.CometIcebergRewriteActionSuite,org.apache.comet.CometIcebergWriteActionSuite&quot;</code></pre>
+<p>The Comet development guide requires the native build before JVM tests and warns not to use <code>-pl</code> for this workflow or an empty <code>-DwildcardSuites</code>, which can select far more tests than intended. Confirm nonzero executed counts, cancellations and actual writer engagement. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/docs/source/contributor-guide/development.md" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/docs/source/contributor-guide/development.md, line 208; opens the local source file" class="source-link">Test invocation guidance</a>.</p>
+<p>For upstream Iceberg tests <strong>with Comet injected</strong>, the repository-supported <code>dev/local-ci.sh iceberg &lt;target&gt;</code> workflow prepares a matching pinned Iceberg tree and applies Comet&#39;s adaptation. It is different from running the sibling Iceberg checkout unchanged. It can be expensive and its preparation sweeps POM-only entries in the shared Maven cache. Choose an appropriate shard/target before running; <code>SKIP_PREPARE=1</code> also skips installing Comet and is not valid after uninstalled code changes. It was not run here. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/local-ci.sh" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/local-ci.sh, line 63; opens the local source file" class="source-link">Local CI entry point</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/local-ci.sh" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/dev/local-ci.sh, line 196; opens the local source file" class="source-link">shared-cache preparation</a>.</p>
+<p>For benchmark discovery, use exact class/method includes rather than an entire JMH matrix. The Comet benchmark entry points are <code>make benchmark-org.apache.spark.sql.benchmark.CometIcebergReadBenchmark</code> and <code>make benchmark-org.apache.spark.sql.benchmark.CometIcebergWriteBenchmark</code>. Build a matching release binary for performance work, record the actual flags, and keep raw outputs/plans outside the worktree. A debug <code>make core</code> build is suitable for correctness work, not a representative release performance comparison.</p>
+<h2 id="experiment-matrix-for-distributed-scale">Experiment matrix for distributed scale</h2>
+<p>This is a proposed investigation, not a completed benchmark:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Experiment</th>
+<th>Hold constant</th>
+<th>Vary</th>
+<th>Record</th>
+</tr>
+</thead><tbody><tr>
+<td>Metadata planning</td>
+<td>Logical file descriptors, filter and delete semantics</td>
+<td>Manifest count/size, LOCAL/DISTRIBUTED, stats width</td>
+<td>Planning time, metadata bytes/requests, driver RSS, descriptors returned</td>
+</tr>
+<tr>
+<td>Data scan</td>
+<td>Same snapshot, schema, file layout and result</td>
+<td>JVM/native path, file concurrency, executor slots</td>
+<td>Bytes/requests, decode/delete CPU, output rows/hash, memory, plan</td>
+</tr>
+<tr>
+<td>File writing</td>
+<td>Same source rows and logical output specification</td>
+<td>JVM/native writer, clustered/fanout, codec</td>
+<td>Statement and phase times, rows/hash, output layout, RSS, close/commit time</td>
+</tr>
+<tr>
+<td>Physical compaction</td>
+<td>Cloned equivalent starting state</td>
+<td>Bin-pack/sort, group size/concurrency, partial progress</td>
+<td>Rewritten groups, shuffle/spill, committed snapshots, retries and read-after result</td>
+</tr>
+<tr>
+<td>Concurrent writers</td>
+<td>Same conflict scenario and isolation level</td>
+<td>Append/DELETE/rewrite overlap at controlled barriers</td>
+<td>Accepted/rejected updates, sequence numbers, visibility and known orphan files</td>
+</tr>
+<tr>
+<td>Failure recovery</td>
+<td>Same intended logical result</td>
+<td>Task loss, storage failure, commit rejection, unknown outcome</td>
+<td>Retry attempts, surviving snapshots, cleanup safety and recovery procedure</td>
+</tr>
+<tr>
+<td>Future read benefit</td>
+<td>Same logical live rows and query set</td>
+<td>Before/after physical layout</td>
+<td>Pruned files/groups/pages, physical bytes, task count and query distribution</td>
+</tr>
+</tbody></table></div>
+<p>Use independent table copies or reproducible reset for each mutating arm. Reusing an already-compacted table for the second engine measures a different workload. Warm/cold metadata, OS/object-store caches, AQE, codec settings, file-size targets, sort order and storage location must be recorded. Randomize or alternate arm order and retain per-iteration samples rather than only the best run.</p>
+<p>For multi-host claims, use multiple executors on separate hosts and record task placement, network/shuffle metrics, storage limits and failure injection. Local Spark integration tests are valuable, but <code>local[2]</code>, <code>local[5]</code> and <code>local[*]</code> cannot independently demonstrate distributed networking or executor-machine loss recovery.</p>
+<h2 id="remaining-gaps">Remaining gaps</h2>
+<p>No fresh integration suite, physical compaction benchmark, hardware profile or multi-node fault-injection run was executed during this documentation audit. The saved maintenance JSON above is historical local evidence; the TPC-H timings remain a different workload with the limitations documented in <a href="12-tpch-spark-versus-comet.html">chapter 12</a>. No current CI status or universal JVM-versus-Rust speedup was inferred. The next useful result would pair the focused native rewrite tests with a three-arm write/compaction run whose exact plans, logical results, file layout and phase metrics are saved.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="17-distributed-iceberg-and-compaction.html"><small>Previous</small>Distributed compaction</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

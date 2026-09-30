@@ -18,14 +18,13 @@ flowchart LR
   subgraph DRIVER["Spark planning"]
     L["Append, overwrite or eligible ReplaceData"]
     S["IcebergWriteStrategy<br/>split writer and committer"]
-    L --> S
+    G{"Native write gates<br/>and native child?"}
+    L --> S --> G
   end
   subgraph EXEC["Executor tasks"]
-    G{"Native write gates<br/>and native child?"}
     N["Comet native file writer"]
     J["Iceberg Java file writer"]
     A["JVM DataFile reconciliation<br/>and TaskCommit"]
-    S --> G
     G -- "yes" --> N --> A
     G -- "no" --> J --> A
   end
@@ -52,6 +51,8 @@ flowchart LR
 ```
 
 The JVM writer already produces normal TaskCommit data; only native output needs the manifest-decoding/metrics-rebuild portion of the reconciliation box.
+
+The eligibility decision runs in driver physical-plan conversion before tasks execute the selected writer. A native runtime failure follows Spark task recovery; it does not switch that task to a JVM writer. [Conversion rule](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometExecRule.scala:464), [support checks](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala:120).
 
 The split strategy keeps the committer outside the AQE-replanned writer subtree and shares one `BatchWrite` object across planning/execution. Recreating unrelated BatchWrite instances would lose the validation context. The strategy declines writers requiring Spark's commit coordinator; the checked Iceberg `SparkWrite` reports that it does not require that coordinator.
 

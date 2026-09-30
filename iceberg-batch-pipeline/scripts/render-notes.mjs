@@ -36,6 +36,9 @@ const shortLabels = new Map([
   ['13-arrow-memory-and-kernels.md', 'Arrow memory and kernels'],
   ['14-vectorization-and-hardware.md', 'Vectorization and hardware'],
   ['15-arrow-in-iceberg-scan-and-rewrite.md', 'Arrow scans and rewrites'],
+  ['16-iceberg-metadata-and-snapshots.md', 'Metadata and snapshots'],
+  ['17-distributed-iceberg-and-compaction.md', 'Distributed compaction'],
+  ['18-iceberg-tests-and-benchmark-evidence.md', 'Tests and benchmark evidence'],
   ['VALIDATION.md', 'Validation'],
   ['scripts/README.md', 'Rendering guide']
 ]);

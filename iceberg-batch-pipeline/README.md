@@ -26,6 +26,9 @@ For browser reading, open the [formatted notebook](index.html). It combines the 
 | [Arrow memory and kernels](13-arrow-memory-and-kernels.md) | Buffer ownership, nulls, strings/views, nested arrays, copies, alignment, FFI, and memory accounting |
 | [Vectorization and hardware](14-vectorization-and-hardware.md) | Batches versus SIMD, actual Rust kernels, compiler targets, caches, bandwidth, TLBs, NUMA, and measurement |
 | [Arrow in scans and rewrites](15-arrow-in-iceberg-scan-and-rewrite.md) | Decode, late materialization, delete correctness, I/O concurrency, writer buffering, compaction, and future read layout |
+| [Metadata manifests snapshots and commits](16-iceberg-metadata-and-snapshots.md) | Reference sharing, metadata pruning, snapshot/file sequences, catalog atomicity, optimistic retries, retention and inspection SQL |
+| [Distributed Iceberg and compaction](17-distributed-iceberg-and-compaction.md) | Remote manifest planning, driver limits, task/group concurrency, JVM/native boundaries, partial progress and concurrent deletes |
+| [Integration tests and benchmark evidence](18-iceberg-tests-and-benchmark-evidence.md) | Exact test assertions, historical XML findings, benchmark timing boundaries, focused commands and missing scale evidence |
 | [Source ledger](09-source-ledger.md) | Exact checkouts, source links, tests, limitations, and revalidation procedure |
 
 The existing [earlier mental-model notebook](../distributed-batch-pipeline-mental-model.md) is preserved. Prefer this collection for the qualified implementation details below.
@@ -52,6 +55,9 @@ Blue denotes Spark control/runtime, yellow Iceberg metadata, purple Comet/DataFu
 | Arrow layout, batch execution and SIMD are distinct | Check concrete kernels, types, compiler targets and profiles before attributing performance |
 | The Arrow reference tree is 60.0.0; Comet resolves 59.3.0 | Newer reference-source optimizations are not automatically in the current Comet binary or old benchmark |
 | A faster rewrite and faster post-rewrite reads are separate outcomes | Measure rewrite CPU/I/O/commit cost separately from file layout and future pruning |
+| Distributed manifest planning still returns descriptors to the driver | Remote metadata processing does not imply constant driver memory |
+| Compaction can retain the starting data sequence number | Newer equality deletes remain applicable; position-delete conflicts still require validation |
+| A benchmark named rewrite may measure metadata only | Inspect the timed block before comparing it with physical row compaction |
 
 ## Evidence discipline
 

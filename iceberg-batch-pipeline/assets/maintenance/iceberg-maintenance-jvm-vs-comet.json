@@ -1,0 +1,66 @@
+{
+  "label": "Local development evidence, not a production SLA",
+  "environment": {
+    "spark": "3.5.8",
+    "iceberg": "1.8.1",
+    "comet": "1.1.0-SNAPSHOT",
+    "master": "local[4]",
+    "adaptive_execution": false,
+    "shuffle_partitions": 4,
+    "off_heap_gib": 2,
+    "native_data_file_concurrency": 4
+  },
+  "input": {
+    "physical_rows": 500000,
+    "visible_rows": 490000,
+    "data_files": 144,
+    "position_delete_files": 72,
+    "delete_percent": 2,
+    "data_bytes": 2492804,
+    "average_data_file_bytes": 17311,
+    "average_data_file_kib": 16.9
+  },
+  "method": {
+    "operation": "rewrite_data_files",
+    "warmup_trials_per_engine": 1,
+    "measured_trials_per_engine": 3,
+    "engine_order": "alternated",
+    "target_tables": "fresh JVM-created equivalent table for every trial",
+    "process_boundary": "both arms in one Spark application; JVM arm disabled Comet planning rules"
+  },
+  "results": {
+    "jvm_seconds": [1.626433, 1.625134, 1.635873],
+    "comet_seconds": [0.327444, 0.361036, 0.325614],
+    "jvm_median_seconds": 1.626433,
+    "comet_median_seconds": 0.327444,
+    "median_speedup": 4.967,
+    "paired_geometric_mean_speedup": 4.825,
+    "representative_data_plane": {
+      "jvm_seconds": 1.358,
+      "comet_seconds": 0.079,
+      "comet_native_scan_seconds": 0.025892,
+      "comet_native_write_seconds": 0.048743
+    }
+  },
+  "plans": {
+    "jvm": ["BatchScan", "ColumnarToRow", "AppendData"],
+    "comet": ["CometIcebergNativeScan", "CometIcebergWrite", "IcebergCommit"]
+  },
+  "correctness": {
+    "rewritten_data_files": 144,
+    "added_data_files": 1,
+    "failed_data_files": 0,
+    "output_physical_rows": 490000,
+    "remaining_delete_files": 72,
+    "row_count": 490000,
+    "price_sum": "245002450.00",
+    "row_hash_sum": "1036039121409077584",
+    "checksum_matched_every_trial": true
+  },
+  "boundaries": [
+    "Iceberg Java still selects rewrite groups and performs the atomic snapshot commit.",
+    "The Comet output file was larger in this run, so this is not a storage-size result.",
+    "rewrite_position_delete_files and metadata-only maintenance are outside this speedup claim.",
+    "Repeat with isolated applications, remote storage, production sizing, and cold-cache trials before using the result as an SLA."
+  ]
+}

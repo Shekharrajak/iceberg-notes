@@ -20,7 +20,7 @@ Checked on 2026-09-30. These are local source revisions, not a claim that every 
 
 The Comet worktree has existing local edits in the Iceberg scan serde and native scan test suite, plus two benchmark files. The notable semantic change allows safe partial residual weakening using predicate polarity. It is explicitly labelled uncommitted throughout the notes. No source edits were made for this notebook. Spark has unrelated untracked Kafka work; Iceberg has unrelated untracked research files. Those were left untouched.
 
-The older note and presentation were preserved. The documentation collection is the only requested repository addition. No commit, push, benchmark, engine build or engine test run is implied.
+The initial notebook creation preserved the older note and presentation. A subsequent source-backed correctness audit updates their manifest, driver/executor, commit-outcome and benchmark explanations alongside the relevant chapters. Publishing these documentation corrections does not imply a new benchmark, engine build or engine test verdict.
 
 ## Iceberg planning
 
@@ -204,6 +204,14 @@ Chapters [13](13-arrow-memory-and-kernels.md), [14](14-vectorization-and-hardwar
 The cached 59.3.0 aggregation/filter implementations were also checked. The BMI2 bitmap `compress`/`expand` helpers in Arrow 60.0.0 were absent from that cached 59.3.0 buffer source; they must not be credited to the checked Comet dependency. Local Cargo source links require those caches to remain available. Release numbers alone do not prove which binary ran the saved benchmark.
 
 Hardware explanations use official LLVM, Rust, Intel, Arm, Linux and Berkeley Lab references. They are explanatory cost models, not measurements of this machine. No assembly, hardware counters, Arrow tests or rewrite benchmarks were collected/run for this addendum.
+
+## Metadata and distributed compaction addendum
+
+Chapters [16](16-iceberg-metadata-and-snapshots.md), [17](17-distributed-iceberg-and-compaction.md) and [18](18-iceberg-tests-and-benchmark-evidence.md) trace the same recorded Iceberg and Comet HEADs through manifest reuse, catalog commit mechanisms, distributed manifest planning, rewrite commit groups and concurrent-delete validation. Relevant implementation and test links appear next to each claim.
+
+The inspection found v4 manifest code in the local Iceberg reference tree. V2/v3 examples and Avro-manifest descriptions must not be interpreted as an exhaustive description of v4, or as a claim that Comet supports those newer native-write paths. The local Spark 3.5 runtime integration class is `TestRoundTrip`; cross-version guides may name a different smoke test.
+
+Existing local XML reports were inspected separately from test source. They have mixed dates and unverified binary/source provenance, including one selected scan test cancelled when SparkContext shut down. No current engine test pass, benchmark gain or live CI status is asserted. Benchmark analysis distinguishes metadata-only replacement/commit work from real Spark row compaction and flags execution-enabled comparisons that do not isolate scan CPU alone.
 
 ## Revalidation procedure
 

@@ -218,7 +218,7 @@
       "type": "flowchart",
       "source": "05-network-and-process-boundaries.mmd",
       "svg": "05-network-and-process-boundaries.svg",
-      "width": 1855,
+      "width": 1889,
       "height": 570,
       "textElements": 23,
       "fonts": [
@@ -233,9 +233,9 @@
       "type": "flowchart",
       "source": "05-local-native-shuffle-flow.mmd",
       "svg": "05-local-native-shuffle-flow.svg",
-      "width": 2939,
-      "height": 180,
-      "textElements": 23,
+      "width": 3192,
+      "height": 183,
+      "textElements": 25,
       "fonts": [
         "Ubuntu, Arial, sans-serif"
       ],
@@ -248,9 +248,9 @@
       "type": "sequence",
       "source": "05-shuffle-fetch-and-decode-sequence.mmd",
       "svg": "05-shuffle-fetch-and-decode-sequence.svg",
-      "width": 1606,
-      "height": 823,
-      "textElements": 26,
+      "width": 2128,
+      "height": 869,
+      "textElements": 29,
       "fonts": [
         "Ubuntu, Arial, sans-serif"
       ],
@@ -264,7 +264,7 @@
       "source": "06-write-component-flow.mmd",
       "svg": "06-write-component-flow.svg",
       "width": 2487,
-      "height": 328,
+      "height": 282,
       "textElements": 25,
       "fonts": [
         "Ubuntu, Arial, sans-serif"
@@ -596,6 +596,111 @@
       "width": 2337,
       "height": 237,
       "textElements": 20,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "16-metadata-object-graph",
+      "title": "Metadata object graph",
+      "chapter": "16-iceberg-metadata-and-snapshots.md",
+      "type": "flowchart",
+      "source": "16-metadata-object-graph.mmd",
+      "svg": "16-metadata-object-graph.svg",
+      "width": 1594,
+      "height": 350,
+      "textElements": 28,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "16-concurrent-append-commit-sequence",
+      "title": "Concurrent append commit sequence",
+      "chapter": "16-iceberg-metadata-and-snapshots.md",
+      "type": "sequence",
+      "source": "16-concurrent-append-commit-sequence.mmd",
+      "svg": "16-concurrent-append-commit-sequence.svg",
+      "width": 1071,
+      "height": 837,
+      "textElements": 24,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "17-distributed-manifest-planning",
+      "title": "Distributed manifest planning",
+      "chapter": "17-distributed-iceberg-and-compaction.md",
+      "type": "flowchart",
+      "source": "17-distributed-manifest-planning.mmd",
+      "svg": "17-distributed-manifest-planning.svg",
+      "width": 2153,
+      "height": 434,
+      "textElements": 19,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "17-compaction-group-lifecycle",
+      "title": "Compaction group lifecycle",
+      "chapter": "17-distributed-iceberg-and-compaction.md",
+      "type": "flowchart",
+      "source": "17-compaction-group-lifecycle.mmd",
+      "svg": "17-compaction-group-lifecycle.svg",
+      "width": 2618,
+      "height": 297,
+      "textElements": 23,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "17-sequence-numbers-preserve-concurrent-delete-semantics",
+      "title": "Sequence numbers preserve concurrent delete semantics",
+      "chapter": "17-distributed-iceberg-and-compaction.md",
+      "type": "sequence",
+      "source": "17-sequence-numbers-preserve-concurrent-delete-semantics.mmd",
+      "svg": "17-sequence-numbers-preserve-concurrent-delete-semantics.svg",
+      "width": 1505,
+      "height": 703,
+      "textElements": 21,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "18-tests-at-each-boundary",
+      "title": "Tests at each boundary",
+      "chapter": "18-iceberg-tests-and-benchmark-evidence.md",
+      "type": "flowchart",
+      "source": "18-tests-at-each-boundary.mmd",
+      "svg": "18-tests-at-each-boundary.svg",
+      "width": 1306,
+      "height": 233,
+      "textElements": 17,
+      "fonts": [
+        "Ubuntu, Arial, sans-serif"
+      ],
+      "fontLoaded": true
+    },
+    {
+      "id": "18-comet-write-benchmark-sequence",
+      "title": "Comet write benchmark sequence",
+      "chapter": "18-iceberg-tests-and-benchmark-evidence.md",
+      "type": "flowchart",
+      "source": "18-comet-write-benchmark-sequence.mmd",
+      "svg": "18-comet-write-benchmark-sequence.svg",
+      "width": 1872,
+      "height": 134,
+      "textElements": 16,
       "fonts": [
         "Ubuntu, Arial, sans-serif"
       ],

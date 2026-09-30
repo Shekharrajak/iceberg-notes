@@ -3,9 +3,10 @@ flowchart LR
   subgraph MAP["Map task"]
     N["Native child plan"]
     P["Hash, range, round-robin<br/>or single partitioning"]
-    EN["Encode compressed Arrow IPC blocks"]
-    SP["Buffer or spill partition data"]
-    N --> P --> EN --> SP
+    BF["Buffer Arrow batches<br/>and partition row indices"]
+    EN["Gather/coalesce rows and encode<br/>optionally compressed IPC to scratch"]
+    SP["Flush encoded scratch<br/>to spill or final output"]
+    N --> P --> BF --> EN --> SP
   end
   subgraph LOCAL["Spark shuffle storage"]
     F[("Map data and index files")]
@@ -24,6 +25,6 @@ flowchart LR
   classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
   classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
   classDef ext fill:#f1f5f9,stroke:#64748b,color:#334155
-  class N,P,EN,SP,DE,OP native
+  class N,P,BF,EN,SP,DE,OP native
   class MS,GET,JNI spark
   class F ext

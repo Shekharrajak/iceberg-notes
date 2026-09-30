@@ -15,7 +15,7 @@ Parquet is the columnar file format. It stores column chunks inside row groups, 
 pages, with a footer containing schema and metadata.
 
 Spark is the distributed SQL engine and scheduler. Its driver plans and adapts the work;
-its scheduler creates stages and task attempts; executors run those tasks and retry them.
+its scheduler creates stages and task attempts and decides retries; executors run the attempts.
 
 Comet is an accelerator inside Spark. It retains the Spark control plane and replaces
 eligible executor-side physical regions with a native implementation.
@@ -103,8 +103,8 @@ files; it is not asked to repeat catalog and manifest planning.
 
 ### 4.2 Executor flow
 
-    Spark task attempt
-      -> CometIcebergNativeScanExec serializes resolved task data
+    Driver resolves runtime filters and serializes surviving partition task data
+      -> Spark launches a task attempt with its assigned partition slice
       -> JNI enters the Comet native runtime
       -> Comet IcebergScanExec receives pre-planned FileScanTasks
       -> iceberg-rust FileIO opens data and delete files
@@ -118,6 +118,9 @@ files; it is not asked to repeat catalog and manifest planning.
 Dynamic Partition Pruning remains a Spark correctness feature. Comet resolves the Spark
 runtime filters before native partitions are serialized; the final native task set is the
 runtime-filtered set.
+
+Serialization is lazy during driver execution setup, before the execution RDD is launched.
+See [scan RDD construction](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergNativeScanExec.scala:269).
 
 ## 5. What Iceberg prunes, what Parquet prunes, and what still executes
 
@@ -135,16 +138,20 @@ runtime-filtered set.
 
 Iceberg avoids opening data files when table metadata proves they cannot match.
 
-- The current snapshot points to manifest lists and manifests.
-- A manifest contains data-file and delete-file entries.
+- The selected snapshot points to a manifest list describing its manifests.
+- A manifest contains either data-file entries or delete-file entries, according to its content kind.
 - Data-file metadata includes path, format, record count, file size, partition tuple,
-  column sizes, value/null/NaN counts, lower/upper bounds, split offsets, equality IDs,
+  column sizes, value/null/NaN counts, lower/upper bounds, split offsets,
   sort-order ID, and partition-spec ID.
+- Equality field IDs describe equality-delete files; ordinary data files return no equality IDs.
 - Predicates can eliminate manifests and data files before a data file is opened.
 - The result is a set of FileScanTasks, including relevant delete files.
 
 Correct language: metadata can prove "cannot match." It cannot universally prove every
 remaining record matches.
+
+Sources: [manifest content contract](/Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/ManifestFile.java:132),
+[ordinary data-file equality IDs](/Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/DataFile.java:164).
 
 ### 5.2 Parquet pruning and vectorized reading
 
@@ -250,13 +257,17 @@ The write path is intentionally asymmetric:
       -> Spark plan and Comet eligibility gate
       -> native child plan produces Arrow batches
       -> CometIcebergWrite produces eligible Parquet data files
-      -> executor returns locations and file-result metadata
+      -> native writer returns locations and file-result metadata to the executor JVM
+      -> executor JVM rebuilds compatible metrics and TaskCommit, then serializes the message
       -> driver collects successful task results
-      -> Iceberg Java rebuilds TaskCommit information and validates
+      -> driver Iceberg Java validates the update
       -> BatchWrite.commit creates a new snapshot
       -> readers see the old or new snapshot atomically
 
 Files can be produced in parallel, but they are not table-visible before the commit.
+
+The executor performs footer/metrics reconciliation before returning its message.
+See [executor TaskCommit construction](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala:174).
 
     Rust can speed up producing data files.
     Iceberg Java decides whether those files form the next valid snapshot.
@@ -279,12 +290,18 @@ all DELETE, UPDATE, and MERGE variants execute in Rust.
 ### 9.3 Failure semantics
 
 - Spark controls task-attempt retry.
-- A failed or rejected commit cannot publish the snapshot.
+- A known rejected commit does not publish the snapshot.
+- An unknown commit outcome can follow successful publication; reconcile table state before retry or cleanup.
 - Abort/cleanup can remove known uncommitted task output.
 - Orphan files can remain after some failures and are handled by maintenance later.
 
 Atomic table visibility is different from immediate deletion of every failed temporary
 object.
+
+Iceberg avoids ordinary cleanup for `CommitStateUnknownException`. Its rewrite test commits
+successfully, injects that exception, and verifies that the new snapshot remains.
+See [commit exception handling](/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java:536)
+and [unknown-outcome test](/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java:1728).
 
 ## 10. Maintenance: data rewrite versus metadata housekeeping
 
@@ -300,9 +317,10 @@ Compaction is a real Comet data-plane story because it reads and rewrites data.
       -> Iceberg Java atomically replaces the file set in a new snapshot
 
 Current Comet tests name a bin-pack rewrite that reads file groups through
-CometIcebergNativeScan. Existing coverage also includes bin-pack, sort, Z-order, and
+CometIcebergNativeScan. Existing coverage also includes bin-pack, sort, single-column Z-order, and
 compaction layouts with position/equality deletes, with eligible output confirmed as
-native-writer output.
+native-writer output. The single-column case does not establish multidimensional Z-order coverage.
+See [Z-order test scope](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala:74).
 
 Why compaction can improve:
 
@@ -325,17 +343,27 @@ For a transparent compaction benchmark, report:
 - wall time, input bytes, files read/written, shuffle/spill metrics
 - native-plan proof and correctness result
 
-### 10.2 Metadata-only maintenance
+### 10.2 Metadata and lifecycle maintenance
 
 Important but not a Comet data-plane acceleration claim by itself:
 
 - expire_snapshots
 - remove_orphan_files
 - rewrite_manifests
-- rewrite_position_delete_files
 
-Rust may help in a future implementation. Today, describe Comet narrowly: it can accelerate
-eligible data rewrites, not every maintenance operation.
+Snapshot expiration and orphan cleanup may delete physical objects; manifest rewriting
+reorganizes file-reference metadata. They have different work from rewriting table rows.
+
+### 10.3 Position-delete-file rewrite
+
+`rewrite_position_delete_files` reads delete rows, removes dangling entries using a join
+against live data-file paths, sorts positions, and writes replacement delete artifacts.
+It is physical file rewriting. The checked Comet action test expects this path to remain JVM.
+See [delete rewrite runner](/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkRewritePositionDeleteRunner.java:103)
+and [Comet fallback test](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala:93).
+
+Comet can accelerate eligible data-file rewrites; each maintenance operation needs its own
+plan and engagement check.
 
 ## 11. Memory mental model
 

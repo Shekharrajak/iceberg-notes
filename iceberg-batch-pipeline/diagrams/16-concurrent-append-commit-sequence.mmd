@@ -1,0 +1,25 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#475569"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Independent writers
+    participant A as Writer A
+    participant B as Writer B
+  end
+  box rgb(254, 249, 195) Table authority
+    participant C as TableOperations and catalog
+  end
+  box rgb(241, 245, 249) File storage
+    participant O as Immutable files
+  end
+  A->>C: Load base metadata M0
+  B->>C: Load base metadata M0
+  A->>O: Write A data and candidate metadata
+  B->>O: Write B data and candidate metadata
+  A->>C: Commit with base M0
+  C-->>A: Accept M1
+  B->>C: Commit with stale base M0
+  C-->>B: Reject conflicting metadata version
+  B->>C: Refresh latest base M1
+  B->>B: Reapply append and validate
+  B->>O: Write revised snapshot metadata
+  B->>C: Commit with base M1
+  C-->>B: Accept M2 if precondition still holds

@@ -1,0 +1,31 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":44},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph CORE["Iceberg core"]
+    M["Metadata status and sequence tests"]
+    C["Commit conflict and recovery tests"]
+  end
+  subgraph SPARK["Iceberg Spark integration"]
+    P["Distributed planning mode tests"]
+    R["Rewrite partial-progress and failure tests"]
+    M --> P
+    C --> R
+  end
+  subgraph COMET["Comet integration"]
+    N["Native scan and writer engagement"]
+    D["Delete parity and retry cleanup"]
+    P --> N
+    R --> D
+  end
+  subgraph SCALE["Additional deployment evidence"]
+    X["Multi-host workload profiles and fault injection"]
+    N --> X
+    D --> X
+  end
+  classDef core fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef comet fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef scale fill:#f1f5f9,stroke:#64748b,color:#334155
+  class M,C core
+  class P,R spark
+  class N,D comet
+  class X scale

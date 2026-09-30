@@ -1,0 +1,39 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":44},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph AUTH["Table authority"]
+    C["Catalog or table-operations current state"]
+  end
+  subgraph META["Versioned table metadata"]
+    T["Metadata JSON: schemas specs properties refs"]
+    S1["Retained snapshot S1"]
+    S2["Current snapshot S2"]
+    C --> T
+    T --> S1
+    T --> S2
+  end
+  subgraph INDEX["Snapshot file indexes"]
+    L1["S1 manifest list"]
+    L2["S2 manifest list"]
+    M1["Shared data manifest"]
+    M2["New data manifest"]
+    MD["Delete manifest"]
+    S1 --> L1 --> M1
+    S2 --> L2
+    L2 --> M1
+    L2 --> M2
+    L2 --> MD
+  end
+  subgraph FILES["Immutable content files"]
+    D1[("Earlier data files")]
+    D2[("New data files")]
+    X[("Delete artifacts")]
+    M1 --> D1
+    M2 --> D2
+    MD --> X
+  end
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  class C control
+  class T,S1,S2,L1,L2,M1,M2,MD metadata
+  class D1,D2,X store

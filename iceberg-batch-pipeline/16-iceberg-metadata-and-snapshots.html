@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iceberg metadata manifests snapshots and commit concurrency | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html" aria-current="page"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="16-iceberg-metadata-and-snapshots.md">Markdown source</a></header><article><h1 id="iceberg-metadata-manifests-snapshots-and-commit-concurrency">Iceberg metadata manifests snapshots and commit concurrency</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#main-findings">Main findings</a></li>
+<li><a href="#version-boundaries">Version boundaries</a></li>
+<li><a href="#metadata-object-graph">Metadata object graph</a></li>
+<li><a href="#snapshot-identity-and-sequence-numbers">Snapshot identity and sequence numbers</a></li>
+<li><a href="#why-appends-need-not-rewrite-the-whole-table">Why appends need not rewrite the whole table</a></li>
+<li><a href="#read-planning-from-metadata">Read planning from metadata</a></li>
+<li><a href="#concurrent-append-commit-sequence">Concurrent append commit sequence</a></li>
+<li><a href="#atomicity-depends-on-the-catalog-implementation">Atomicity depends on the catalog implementation</a></li>
+<li><a href="#readers-and-garbage-collection">Readers and garbage collection</a></li>
+<li><a href="#metadata-inspection-queries">Metadata inspection queries</a></li>
+<li><a href="#what-this-means-for-comet">What this means for Comet</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="17-distributed-iceberg-and-compaction.html">Distributed planning and compaction</a> | <a href="18-iceberg-tests-and-benchmark-evidence.html">Tests and benchmarks</a></p>
+<p>Iceberg makes a table a versioned graph of metadata and immutable file references, not a directory listing. Parallel workers can produce files independently, but those files become part of a table only when the table commit publishes a new metadata state. Understanding that distinction explains snapshot reads, manifest reuse, optimistic concurrency and safe compaction.</p>
+<h2 id="main-findings">Main findings</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Finding from the checked code</th>
+</tr>
+</thead><tbody><tr>
+<td>Does a reader list every Parquet file?</td>
+<td>Normal table scans follow a selected snapshot&#39;s manifest references, then prune metadata</td>
+</tr>
+<tr>
+<td>Is a snapshot a full copy of table data?</td>
+<td>No; snapshots can share manifests and data files</td>
+</tr>
+<tr>
+<td>Must a current scan replay every old snapshot?</td>
+<td>No; the selected snapshot identifies its manifest set; history is needed for other operations such as conflict validation</td>
+</tr>
+<tr>
+<td>Does every metadata commit create a snapshot?</td>
+<td>No; properties, schemas, partition specs and references also change table metadata</td>
+</tr>
+<tr>
+<td>Does writing a Parquet file commit a row?</td>
+<td>No; completed files are unpublished until the table update succeeds</td>
+</tr>
+<tr>
+<td>Is a commit retry a rerun of Spark tasks?</td>
+<td>Not normally; metadata is refreshed and the pending update is reapplied and revalidated</td>
+</tr>
+<tr>
+<td>Does Comet replace the commit protocol with Rust?</td>
+<td>No; eligible Rust file output is reconciled with the Iceberg Java commit contract</td>
+</tr>
+</tbody></table></div>
+<p>Inspection: Iceberg <code>5e7169168db3d34e29354c6f59ec4d6e420b8d2d</code>, Comet <code>184accac5b9cee6b761a6673c73c263adedef45e</code>, 2026-09-30. Existing local changes are recorded in the <a href="09-source-ledger.html">source ledger</a>. These are source inspections, not new passing integration-test results.</p>
+<h2 id="version-boundaries">Version boundaries</h2>
+<p>The detailed examples use the familiar v2/v3 snapshot and manifest model. In this local Iceberg tree, v4 code also exists, including Avro and Parquet manifest support. Therefore, <strong>all Iceberg manifests are always Avro</strong> is not an accurate description of this entire checkout. The checked <code>ManifestLists</code> still reads manifest lists as Avro; a manifest list and a manifest are different objects. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestLists.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestLists.java, line 44; opens the local source file" class="source-link">Manifest lists</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestFiles.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestFiles.java, line 264; opens the local source file" class="source-link">versioned manifest writers</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/ManifestBenchmark.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/jmh/java/org/apache/iceberg/ManifestBenchmark.java, line 45; opens the local source file" class="source-link">v4 manifest benchmark</a>.</p>
+<p>This source-tree capability is not a Comet compatibility claim. The checked Comet native writer rejects table format version 3 and later; native read and write gates must be evaluated independently. See <a href="15-arrow-in-iceberg-scan-and-rewrite.html#native-eligibility-remains-a-separate-question">native eligibility</a>. The <a href="https://iceberg.apache.org/spec/">public specification</a> is the format reference; the code revisions above are the authority for this notebook&#39;s implementation trace.</p>
+<h2 id="metadata-object-graph">Metadata object graph</h2>
+<figure class="diagram" id="diagram-16-metadata-object-graph"><figcaption><span>Metadata object graph</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-16-metadata-object-graph" hidden>Actual size</button><a href="diagrams/16-metadata-object-graph.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/16-metadata-object-graph.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-16-metadata-object-graph" tabindex="0" role="region" aria-label="Metadata object graph"><img src="diagrams/16-metadata-object-graph.svg" width="1594" height="350" alt="Metadata object graph"></div></figure>
+<p>This illustrative graph shows reference sharing, not a promise that every append creates exactly one manifest. Snapshot parent links are omitted so the storage references remain readable. A delete artifact may be a v2 delete file or an applicable newer-format representation; its applicability is checked, not inferred from sharing a directory.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Object</th>
+<th>Important contents</th>
+<th>Reader or writer responsibility</th>
+</tr>
+</thead><tbody><tr>
+<td>Catalog/table operations</td>
+<td>Current metadata location or equivalent authoritative version</td>
+<td>Resolve the table and enforce the implementation&#39;s commit precondition</td>
+</tr>
+<tr>
+<td>Table metadata</td>
+<td>UUID, format, schemas and IDs, partition specs, sort orders, properties, snapshots, refs, logs</td>
+<td>Interpret files using the correct identities and select a snapshot</td>
+</tr>
+<tr>
+<td>Snapshot</td>
+<td>ID, parent, sequence, timestamp, operation, summary, schema ID, manifest-list location</td>
+<td>Identify a table state, not an executor&#39;s temporary output</td>
+</tr>
+<tr>
+<td>Manifest list entry</td>
+<td>Manifest path/length/content/spec ID, sequence information, live/deleted counts, partition summaries</td>
+<td>Skip irrelevant manifests without opening all of them</td>
+</tr>
+<tr>
+<td>Manifest entry</td>
+<td>ADDED/EXISTING/DELETED status, snapshot/data/file sequence information, content-file descriptor</td>
+<td>Decide whether a file is live and how it participates in delete semantics</td>
+</tr>
+<tr>
+<td>DataFile descriptor</td>
+<td>Path, format, partition tuple, rows/bytes, field-ID metrics, split offsets and other metadata</td>
+<td>Prune files and construct read work; it is not the row payload</td>
+</tr>
+<tr>
+<td>Physical data file</td>
+<td>Encoded table rows and file-format metadata</td>
+<td>Decode projected columns and honor applicable row semantics</td>
+</tr>
+</tbody></table></div>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableMetadata.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableMetadata.java, line 246; opens the local source file" class="source-link">TableMetadata fields</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseSnapshot.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseSnapshot.java, line 41; opens the local source file" class="source-link">BaseSnapshot</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestEntry.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestEntry.java, line 30; opens the local source file" class="source-link">ManifestEntry</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/DataFile.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/DataFile.java, line 1; opens the local source file" class="source-link">DataFile schema</a>.</p>
+<h2 id="snapshot-identity-and-sequence-numbers">Snapshot identity and sequence numbers</h2>
+<p>Snapshot IDs identify snapshots; do not interpret a larger ID as a later commit. Sequence numbers carry ordering semantics in v2 and later. A file&#39;s <strong>data sequence</strong> describes its data&#39;s logical age; its <strong>file sequence</strong> describes when that physical file was added. Compaction is the important case where these can differ.</p>
+<p>For example, replacement file C can be added in snapshot sequence 12 while preserving data sequence 10. The reader can then apply an equality delete from sequence 11 to C. Giving C a new data sequence of 12 would change that applicability. The precise conflict checks and example are in <a href="17-distributed-iceberg-and-compaction.html#sequence-numbers-preserve-concurrent-delete-semantics">concurrent compaction</a>. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestEntry.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestEntry.java, line 99; opens the local source file" class="source-link">Sequence contracts</a>.</p>
+<p>ADDED and EXISTING entries are live; DELETED entries record removal from the relevant snapshot state. A DELETED entry does not prove the object has already been erased from storage. It may remain necessary for retained snapshots. Likewise, an old manifest can still contain ADDED entries when reused by a later snapshot: ADDED is not a claim that the file was first created in every snapshot referencing that manifest.</p>
+<h2 id="why-appends-need-not-rewrite-the-whole-table">Why appends need not rewrite the whole table</h2>
+<p><code>BaseTable.newFastAppend()</code> chooses <code>FastAppend</code>; <code>newAppend()</code> chooses <code>MergeAppend</code>. <code>FastAppend.apply</code> combines newly written/appended manifests with the parent snapshot&#39;s manifest set. <code>SnapshotProducer.apply</code> writes a new manifest list and constructs the new snapshot. Existing data files do not need to be read or rewritten for an ordinary append. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseTable.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseTable.java, line 208; opens the local source file" class="source-link">Append selection</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/FastAppend.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/FastAppend.java, line 147; opens the local source file" class="source-link">manifest reuse</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java, line 295; opens the local source file" class="source-link">snapshot assembly</a>.</p>
+<p>That is not free forever. Fast appends can accumulate many small manifests. Merge-oriented paths and explicit manifest rewrites can reorganize entries, trading commit work for future planning efficiency. The checked defaults include an 8 MiB manifest target, merging enabled, and a minimum merge count of 100. These configure the applicable merge logic; they do not mean every 100th commit rewrites the entire metadata graph. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java, line 115; opens the local source file" class="source-link">Properties</a>.</p>
+<p>Three growth dimensions must be measured separately:</p>
+<ul>
+<li>Retained metadata/snapshots increase history and reachability work.</li>
+<li>Many live manifests increase manifest-list and planning work.</li>
+<li>Many live data/delete files increase descriptors, task planning, opens and read semantics.</li>
+</ul>
+<p>Compacting data files does not automatically solve every metadata problem. Expiring snapshots does not automatically reduce the number of files in the current snapshot.</p>
+<h2 id="read-planning-from-metadata">Read planning from metadata</h2>
+<p><code>BaseSnapshot.cacheManifests</code> lazily reads and caches the manifest list for that snapshot object, then separates data and delete manifests. It is not an unbounded, globally shared cache that makes every subsequent query free. <code>DataTableScan.doPlanFiles</code> passes those manifests, the projected metadata columns, schema/spec maps and row filter into <code>ManifestGroup</code>. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseSnapshot.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseSnapshot.java, line 169; opens the local source file" class="source-link">Snapshot cache</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DataTableScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/DataTableScan.java, line 63; opens the local source file" class="source-link">DataTableScan</a>.</p>
+<p><code>ManifestGroup</code> creates evaluators per partition spec. It uses an inclusive projection of the data predicate onto that spec, checks manifest partition summaries, reads surviving manifests and applies file-level filters. Inclusive means a safe candidate test, not exact SQL evaluation. Partition evolution therefore does not require pretending all files use the latest partition transform. Each manifest&#39;s spec identifies how its partition values must be interpreted. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java, line 287; opens the local source file" class="source-link">Manifest filtering</a>.</p>
+<p>It builds a delete-file index and residual evaluator, retaining column statistics when equality-delete matching needs them. The scan task must carry the relevant data file, split, residual and deletes; projection alone is not permission to discard fields needed for correctness. The next chapter explains how this metadata work can itself run on Spark executors. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java, line 164; opens the local source file" class="source-link">Task construction</a>.</p>
+<h2 id="concurrent-append-commit-sequence">Concurrent append commit sequence</h2>
+<figure class="diagram" id="diagram-16-concurrent-append-commit-sequence"><figcaption><span>Concurrent append commit sequence</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-16-concurrent-append-commit-sequence" hidden>Actual size</button><a href="diagrams/16-concurrent-append-commit-sequence.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/16-concurrent-append-commit-sequence.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-16-concurrent-append-commit-sequence" tabindex="0" role="region" aria-label="Concurrent append commit sequence"><img src="diagrams/16-concurrent-append-commit-sequence.svg" width="1071" height="837" alt="Concurrent append commit sequence"></div></figure>
+<p>This is a successful retry example for compatible appends, not a guarantee that any concurrent operations commute. The data files written by B can be reused; rebuilding metadata is different from rerunning its Spark job. Another conflict can occur on the next attempt, and retry budgets are finite.</p>
+<p><code>SnapshotProducer.commit</code> retries <code>CommitFailedException</code> using the configured backoff. Each attempt calls <code>apply</code>, which refreshes the base and runs validations. It does not blindly republish an obsolete snapshot. <code>CommitStateUnknownException</code> is explicitly propagated without ordinary failure cleanup because publication might already have succeeded. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotProducer.java, line 484; opens the local source file" class="source-link">Commit loop</a>.</p>
+<h2 id="atomicity-depends-on-the-catalog-implementation">Atomicity depends on the catalog implementation</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Checked implementation</th>
+<th>Publication mechanism</th>
+<th>Important distinction</th>
+</tr>
+</thead><tbody><tr>
+<td>JDBC</td>
+<td>Update the catalog row conditional on the expected old metadata location; require one updated row</td>
+<td>Independent writers coordinate through the database, not a shared JVM monitor</td>
+</tr>
+<tr>
+<td>Hadoop path-based table</td>
+<td>Write temporary metadata, rename to the next metadata version, then update a best-effort version hint</td>
+<td>The rename is the commit operation; the hint is not the transaction authority</td>
+</tr>
+<tr>
+<td>Generic <code>TableOperations</code></td>
+<td><code>commit(base, updated)</code> contract</td>
+<td>Do not assume every catalog uses the same SQL, lock, rename or HTTP protocol</td>
+</tr>
+</tbody></table></div>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/jdbc/JdbcUtil.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/jdbc/JdbcUtil.java, line 109; opens the local source file" class="source-link">JDBC conditional update SQL</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/jdbc/JdbcTableOperations.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/jdbc/JdbcTableOperations.java, line 145; opens the local source file" class="source-link">affected-row check</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/hadoop/HadoopTableOperations.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/hadoop/HadoopTableOperations.java, line 131; opens the local source file" class="source-link">Hadoop commit</a>.</p>
+<p>The required filesystem/catalog guarantees must hold on the actual deployment. A successful local HadoopCatalog demo is not evidence that an arbitrary object-store rename implements the same atomicity. Rust versus JVM does not remove the need for a common commit authority when multiple engines write the same table.</p>
+<h2 id="readers-and-garbage-collection">Readers and garbage collection</h2>
+<p>A reader plans against a selected snapshot and its files; a concurrent append does not silently add rows to that already-planned scan. However, retaining a snapshot reference in a running process does not create an automatic storage lease against maintenance. Expiration and orphan cleanup policies must account for long-running readers and writers.</p>
+<p><code>RemoveSnapshots</code> considers retained refs and their policies, prevents explicitly expiring snapshots still referenced by retained refs, commits the metadata change, and performs the selected cleanup. Shared files cannot be treated as garbage merely because one snapshot stopped referencing them. Unknown commit outcomes and in-progress writes make aggressive orphan deletion especially dangerous. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java, line 198; opens the local source file" class="source-link">Retention selection</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java, line 379; opens the local source file" class="source-link">cleanup</a>.</p>
+<p>Branches and tags are named snapshot references with different update/retention roles. A rollback changes which retained snapshot is current; it does not reverse a Parquet file byte by byte. The snapshot history and the set of retained snapshots answer different questions, especially after rollback or branch activity.</p>
+<h2 id="metadata-inspection-queries">Metadata inspection queries</h2>
+<p>These are read-only examples for an existing Spark Iceberg catalog. Replace <code>catalog.db.table_name</code>; no queries were executed for this chapter.</p>
+<pre><code>SELECT committed_at, snapshot_id, parent_id, operation, manifest_list, summary
+FROM catalog.db.table_name.snapshots
+ORDER BY committed_at;
+
+SELECT made_current_at, snapshot_id, parent_id, is_current_ancestor
+FROM catalog.db.table_name.history
+ORDER BY made_current_at;
+
+SELECT content, partition_spec_id, count(*) AS manifests, sum(length) AS manifest_bytes,
+       sum(added_data_files_count + existing_data_files_count) AS live_data_entries
+FROM catalog.db.table_name.manifests
+GROUP BY content, partition_spec_id;</code></pre>
+<p>The last query measures metadata entries in the selected manifest set, not decoded rows or storage request counts. Snapshot summaries are not a substitute for a correctness query. Metadata-table schemas are verified in <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotsTable.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/SnapshotsTable.java, line 30; opens the local source file" class="source-link">SnapshotsTable</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/HistoryTable.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/HistoryTable.java, line 37; opens the local source file" class="source-link">HistoryTable</a>, and <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestsTable.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestsTable.java, line 31; opens the local source file" class="source-link">ManifestsTable</a>.</p>
+<h2 id="what-this-means-for-comet">What this means for Comet</h2>
+<p>The native writer&#39;s DataFile transport manifest is an executor-to-JVM handoff, not proof that Rust published the table&#39;s snapshot or manifest list. JVM code reconstructs compatible file metadata and commit messages; Iceberg Java applies the table update. Native scan work likewise consumes planned file tasks rather than independently selecting another snapshot. The metadata graph and concurrency contract stay shared with other Iceberg writers. See <a href="06-iceberg-write.html#executor-handoff-sequence">write handoff</a> and <a href="18-iceberg-tests-and-benchmark-evidence.html">test evidence</a>.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><small>Previous</small>Arrow scans and rewrites</a><a href="17-distributed-iceberg-and-compaction.html"><small>Next</small>Distributed compaction</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

@@ -48,6 +48,14 @@ node scripts/verify-tpch-evidence.mjs
 
 This verifies all 22 timing rows, ratios, totals, 61 documented columns, the query-map count and saved Q6 operator names. It does not rerun queries or validate historical correctness claims.
 
+Check the separately preserved maintenance summary:
+
+```bash
+node scripts/verify-maintenance-evidence.mjs
+```
+
+This checks its six timing samples, median/geometric-mean ratios and recorded row/file arithmetic against chapter 18. It does not reproduce the experiment or validate its provenance.
+
 Check the Arrow/hardware teaching examples separately:
 
 ```bash

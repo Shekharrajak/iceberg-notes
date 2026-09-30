@@ -1,0 +1,24 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":44},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph SETUP["Outside measured statement"]
+    P["Build fixed source corpus"]
+    V["Preflight each arm: execute verify plan and count"]
+    R["Reset target before each iteration"]
+    P --> V --> R
+  end
+  subgraph TIMED["Measured workload"]
+    T["Start timer"]
+    W["Execute SQL including file output and commit"]
+    E["Stop timer"]
+    R --> T --> W --> E
+  end
+  subgraph REPORT["Interpret results"]
+    B["Compare arms and preserve fallback label"]
+    E --> B
+  end
+  classDef setup fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef timed fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef report fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class P,V,R setup
+  class T,W,E timed
+  class B report

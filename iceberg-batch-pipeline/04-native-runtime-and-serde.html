@@ -16,8 +16,11 @@
 <li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
 <li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
 <li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
-<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="04-native-runtime-and-serde.md">Markdown source</a></header><article><h1 id="native-execution-serialization-and-memory">Native execution serialization and memory</h1>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="04-native-runtime-and-serde.md">Markdown source</a></header><article><h1 id="native-execution-serialization-and-memory">Native execution serialization and memory</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#summary">Summary</a></li>
 <li><a href="#physical-conversion-flow">Physical conversion flow</a></li>
 <li><a href="#serialization-contracts">Serialization contracts</a></li>
@@ -66,7 +69,7 @@
 </tr>
 <tr>
 <td>Executor shuffle transport</td>
-<td>Comet-framed compressed Arrow IPC blocks</td>
+<td>Comet-framed, optionally compressed Arrow IPC blocks</td>
 <td>Encode, transfer and decode; not C pointers sent over the network</td>
 </tr>
 <tr>
@@ -88,10 +91,11 @@
 <h2 id="arrow-lifetime-and-copying">Arrow lifetime and copying</h2>
 <p>Arrow arrays refer to buffers and children; a <code>RecordBatch</code> groups arrays with a schema and row count. The C Data interface exports a schema, array description and release contract. The C Stream interface exposes a producer of such arrays. Neither is an RPC system.</p>
 <p>Zero-copy is boundary-specific. Comet&#39;s output code explicitly materializes non-zero-offset arrays through <code>take</code> on a compatibility path. Type casts, schema adaptation, filtering, decompression and shuffle interleaving can allocate. Returning a pointer does not make the full query allocation-free.</p>
-<p>The shuffle block bridge returns a reusable DirectByteBuffer. Its bytes are valid only until the next pull. Native decoding must finish consuming those compressed bytes first; the decoded batch uses separately owned decompressed buffers.</p>
+<p>The shuffle block bridge returns a reusable DirectByteBuffer. Its bytes are valid only until the next pull. Native decoding must finish consuming those encoded bytes first; the decoded batch uses separately owned IPC body buffers. With compression disabled, the decoder copies the uncompressed IPC bodies rather than retaining the reusable bridge buffer. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/ipc.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/ipc.rs, line 450; opens the local source file" class="source-link">Decoder ownership</a>.</p>
 <h2 id="memory-reservation-flow">Memory reservation flow</h2>
+<p>This diagram covers Spark off-heap mode and the task-shared <code>greedy_unified</code> or <code>fair_unified</code> pool. When Spark off-heap mode is disabled, this checkout selects an unbounded native pool for the on-heap compatibility path; those allocations still consume process memory. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/config.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/config.rs, line 46; opens the local source file" class="source-link">Pool selection</a>.</p>
 <figure class="diagram" id="diagram-04-memory-reservation-flow"><figcaption><span>Memory reservation flow</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-04-memory-reservation-flow" hidden>Actual size</button><a href="diagrams/04-memory-reservation-flow.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/04-memory-reservation-flow.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-04-memory-reservation-flow" tabindex="0" role="region" aria-label="Memory reservation flow"><img src="diagrams/04-memory-reservation-flow.svg" width="1808" height="399" alt="Memory reservation flow"></div></figure>
-<p>The shared off-heap pool is an accounting budget, not a single shared allocator. Rust still allocates native memory. Multiple native plans in one Spark task share a task budget. Pool policy controls fairness and admission, but only explicitly reserved allocations are tracked.</p>
+<p>The shared off-heap pool is an accounting budget, not a single shared allocator. Rust still allocates native memory. Multiple native plans in one Spark task share a task budget in this mode. The admission branch depicts fallible <code>try_grow</code>; <code>grow</code> records memory that already exists and can carry an overcommit when Spark cannot grant all requested bytes. Pool policy controls fairness and admission, but only explicitly reserved allocations are tracked. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/spark_memory.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/memory_pools/spark_memory.rs, line 55; opens the local source file" class="source-link">Reservation accounting</a>.</p>
 <p>Per-batch kernel buffers, decompression, readers, request buffers, runtime overhead, JVM Arrow buffers and allocator fragmentation can sit outside reservations. The container can run out of memory while the reservation pool appears healthy.</p>
 <p>Spark&#39;s <code>NativeMemoryConsumer.spill</code> callback does not directly spill native state. Native operators with spill support respond to reservation pressure through their own logic. Do not interpret shared accounting as universal cross-language spill control, or assume every join/aggregate/expression can spill.</p>
 <h2 id="practical-boundaries-to-inspect">Practical boundaries to inspect</h2>

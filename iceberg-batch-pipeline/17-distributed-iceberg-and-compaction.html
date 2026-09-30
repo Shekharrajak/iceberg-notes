@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Distributed Iceberg planning execution and compaction | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html" aria-current="page"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="17-distributed-iceberg-and-compaction.md">Markdown source</a></header><article><h1 id="distributed-iceberg-planning-execution-and-compaction">Distributed Iceberg planning execution and compaction</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#the-units-of-parallelism">The units of parallelism</a></li>
+<li><a href="#distributed-manifest-planning">Distributed manifest planning</a></li>
+<li><a href="#from-file-descriptors-to-spark-execution">From file descriptors to Spark execution</a></li>
+<li><a href="#jvm-versus-comet-is-an-execution-boundary-comparison">JVM versus Comet is an execution boundary comparison</a></li>
+<li><a href="#compaction-group-lifecycle">Compaction group lifecycle</a></li>
+<li><a href="#partial-progress-changes-publication-granularity">Partial progress changes publication granularity</a></li>
+<li><a href="#sequence-numbers-preserve-concurrent-delete-semantics">Sequence numbers preserve concurrent delete semantics</a></li>
+<li><a href="#three-different-failures-and-recoveries">Three different failures and recoveries</a></li>
+<li><a href="#capacity-model-for-a-large-rewrite">Capacity model for a large rewrite</a></li></ul></nav></details>
+<p><a href="index.html">Index</a> | <a href="16-iceberg-metadata-and-snapshots.html">Metadata and snapshots</a> | <a href="18-iceberg-tests-and-benchmark-evidence.html">Tests and benchmarks</a></p>
+<p>Scaling an Iceberg job means scaling several different kinds of work: metadata planning, file reads, compute/shuffle, file production and publication. Spark can distribute both manifest processing and table-row processing. Comet accelerates eligible executor data work inside that system; it does not provide a second cluster scheduler or a replacement catalog transaction protocol.</p>
+<p>This chapter follows the checked Iceberg Spark 3.5 implementation and the Comet revision in the <a href="09-source-ledger.html">source ledger</a>. Other Spark modules, packaged Iceberg versions and catalog implementations must be checked separately.</p>
+<h2 id="the-units-of-parallelism">The units of parallelism</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Unit</th>
+<th>Meaning</th>
+<th>Do not confuse it with</th>
+</tr>
+</thead><tbody><tr>
+<td>Manifest</td>
+<td>Metadata entries sharing a partition-spec interpretation and content kind</td>
+<td>A Spark data-read partition</td>
+</tr>
+<tr>
+<td>Manifest-planning Spark partition</td>
+<td>Work to read/filter candidate metadata remotely</td>
+<td>Native Parquet scan work</td>
+</tr>
+<tr>
+<td>FileScanTask</td>
+<td>File/split/residual/delete-related read work</td>
+<td>Necessarily a whole file or one final Spark task</td>
+</tr>
+<tr>
+<td>ScanTaskGroup / Spark InputPartition</td>
+<td>Group of tasks assigned as input work</td>
+<td>One Iceberg partition value</td>
+</tr>
+<tr>
+<td>Spark task attempt</td>
+<td>Scheduled execution of a partition, including retry identity</td>
+<td>A committed snapshot</td>
+</tr>
+<tr>
+<td>Native file concurrency</td>
+<td>Overlapping file-reader work within a native scan</td>
+<td>More Spark executor slots</td>
+</tr>
+<tr>
+<td>Rewrite file group</td>
+<td>Independently rewritable set chosen by the action planner</td>
+<td>One Spark task; a group can require many tasks and stages</td>
+</tr>
+<tr>
+<td>Snapshot commit</td>
+<td>Validated publication of selected results</td>
+<td>One commit per output file or task</td>
+</tr>
+</tbody></table></div>
+<h2 id="distributed-manifest-planning">Distributed manifest planning</h2>
+<figure class="diagram" id="diagram-17-distributed-manifest-planning"><figcaption><span>Distributed manifest planning</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-17-distributed-manifest-planning" hidden>Actual size</button><a href="diagrams/17-distributed-manifest-planning.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/17-distributed-manifest-planning.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-17-distributed-manifest-planning" tabindex="0" role="region" aria-label="Distributed manifest planning"><img src="diagrams/17-distributed-manifest-planning.svg" width="2153" height="434" alt="Distributed manifest planning"></div></figure>
+<p>The diagram is an ownership decomposition; data and delete planning can overlap. Distributed metadata work does not make the reader itself native. It is still Iceberg Java code running in Spark tasks.</p>
+<p><code>BaseDistributedDataScan.doPlanFiles</code> first filters data/delete manifests and decides independently where each side should be planned. If both stay local, it uses the normal manifest-group path. Otherwise it starts data and delete planning futures, then combines data descriptors with the delete index into scan tasks. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java, line 150; opens the local source file" class="source-link">Planning branches</a>.</p>
+<p><code>SparkDistributedDataScan</code> parallelizes the candidate manifest beans with one RDD partition per manifest in this implementation. Executors read/filter manifests using the broadcast serializable table and schema/spec context. Data descriptors return through <code>collectPartitions</code>; delete descriptors return through <code>collect</code>, and the delete index is built on the driver. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/SparkDistributedDataScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/SparkDistributedDataScan.java, line 124; opens the local source file" class="source-link">Spark implementation</a>.</p>
+<p>The consequence is important: distributed planning moves metadata I/O and filtering out to executors, but matching descriptors still return to the driver. It is not proof of constant driver memory as live-file count grows. Manifest count, surviving entries, column-statistics width, serialization and delete-index size all matter.</p>
+<h3 id="when-auto-chooses-local-work">When AUTO chooses local work</h3>
+<p>The checked implementation is more specific than “large table means distributed planning”:</p>
+<ul>
+<li>An explicitly supplied planning executor forces the local planning path in the core decision.</li>
+<li>AUTO favors local data planning when column statistics must be loaded, including for possible equality deletes.</li>
+<li>AUTO favors local delete planning when equality deletes may be present.</li>
+<li>The generic AUTO decision stays local if remote parallelism is no greater than local parallelism, manifest count is at most twice local parallelism, or manifest bytes are below the local planning threshold.</li>
+<li>The threshold is local planning parallelism times 128 MiB in this checkout.</li>
+<li><code>SparkReadConf</code> forces LOCAL when its parsed <code>spark.driver.maxResultSize</code> is below 256 MiB, even before resolving the requested planning-mode config. Do not assume a setting that Spark otherwise treats specially, such as zero, bypasses this literal comparison.</li>
+</ul>
+<p>These are source-version heuristics, not recommended tuning constants. Supported distributed planning also depends on the table capability. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java, line 228; opens the local source file" class="source-link">Core decision</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/BaseDistributedDataScan.java, line 61; opens the local source file" class="source-link">threshold</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/SparkReadConf.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/SparkReadConf.java, line 346; opens the local source file" class="source-link">Spark gates</a>.</p>
+<p>The table properties are <code>read.data-planning-mode</code> and <code>read.delete-planning-mode</code>, with AUTO as the checked default. Force a mode only after measuring its costs; distributing a tiny manifest scan can add more Spark scheduling/serialization work than it removes. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java, line 276; opens the local source file" class="source-link">Properties</a>.</p>
+<h2 id="from-file-descriptors-to-spark-execution">From file descriptors to Spark execution</h2>
+<p>After file planning, split/task-group planning combines work using split size, lookback and file-open cost. The checked base defaults are 128 MiB target splits, lookback 10 and 4 MiB open-file cost. The cost is a planning weight, not an assertion that opening each file reads 4 MiB. Adaptive splitting and Spark overrides can change the effective task shape. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/TableProperties.java, line 249; opens the local source file" class="source-link">Planning properties</a>.</p>
+<p><code>SparkBatch.planInputPartitions</code> broadcasts serializable table and FileIO objects, serializes the expected schema, computes locality preferences and constructs an input partition for each task group. This is why “one input file equals one Spark task” is unsafe as a universal model. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatch.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkBatch.java, line 87; opens the local source file" class="source-link">Input partitions</a>.</p>
+<p>Spark still chooses executor placements, runs attempts and handles stage failures. Comet&#39;s native scan receives resolved file-task payloads. Rust does task-level file I/O, delete application, schema adaptation and Arrow production; it does not ask a separate scheduler to launch workers. See <a href="05-distributed-execution.html">task scheduling and networking</a>, <a href="15-arrow-in-iceberg-scan-and-rewrite.html#concrete-comet-scan-entry-point">scan internals</a>, and <a href="07-fault-tolerance.html">fault tolerance</a>.</p>
+<h2 id="jvm-versus-comet-is-an-execution-boundary-comparison">JVM versus Comet is an execution boundary comparison</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Phase</th>
+<th>Spark with Iceberg JVM path</th>
+<th>Eligible Comet path</th>
+<th>Shared responsibility</th>
+</tr>
+</thead><tbody><tr>
+<td>Snapshot and metadata planning</td>
+<td>Iceberg Java, possibly distributed using Spark</td>
+<td>Same control-plane family</td>
+<td>Field IDs, specs, snapshots and valid file tasks</td>
+</tr>
+<tr>
+<td>Parquet data read</td>
+<td>Iceberg Java reader; batch/vectorization eligibility varies</td>
+<td>Iceberg Rust and Parquet Rust produce Arrow batches</td>
+<td>Decode correct projected rows and apply applicable deletes</td>
+</tr>
+<tr>
+<td>Expressions, joins, aggregation, sort</td>
+<td>Spark physical operators and generated JVM code</td>
+<td>Eligible Comet/DataFusion native region</td>
+<td>SQL semantics and plan distribution requirements</td>
+</tr>
+<tr>
+<td>Shuffle</td>
+<td>Spark-managed exchange and block lifecycle</td>
+<td>Eligible native serialization/write/read paths</td>
+<td>Spark stage dependencies, locations and retries remain relevant</td>
+</tr>
+<tr>
+<td>Data-file production</td>
+<td>Iceberg Java writers</td>
+<td>Eligible Iceberg Rust Parquet writers</td>
+<td>Correct partitioning, schema IDs, metrics and closed files</td>
+</tr>
+<tr>
+<td>Commit-message construction</td>
+<td>Normal Java writer results</td>
+<td>JVM reconstruction/reconciliation of native results</td>
+<td>Iceberg-compatible commit messages</td>
+</tr>
+<tr>
+<td>Table publication</td>
+<td>Iceberg Java/catalog</td>
+<td>Iceberg Java/catalog</td>
+<td>Optimistic conflict checks and snapshot visibility</td>
+</tr>
+</tbody></table></div>
+<p>Do not compare these as “a row-at-a-time JVM versus automatically SIMD Rust.” JVM Parquet readers can already be vectorized; native code can still allocate, copy, wait for I/O and fall back at unsupported boundaries. Chapters <a href="13-arrow-memory-and-kernels.html">13</a> and <a href="14-vectorization-and-hardware.html">14</a> explain those costs.</p>
+<p>Concurrent Spark tasks already perform JVM reads/writes in parallel. Rust&#39;s bounded async file/range concurrency can overlap additional I/O inside a task. That is a different mechanism, not proof that the JVM is single-threaded. More native file concurrency can also multiply requests, decoded buffers and delete-reader memory. The checked <code>spark.comet.scan.icebergNative.dataFileConcurrencyLimit</code> defaults to 1 and must be positive; it does not set Spark task parallelism. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 175; opens the local source file" class="source-link">Native concurrency</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala, line 144; opens the local source file" class="source-link">configuration</a>.</p>
+<h2 id="compaction-group-lifecycle">Compaction group lifecycle</h2>
+<figure class="diagram" id="diagram-17-compaction-group-lifecycle"><figcaption><span>Compaction group lifecycle</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-17-compaction-group-lifecycle" hidden>Actual size</button><a href="diagrams/17-compaction-group-lifecycle.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/17-compaction-group-lifecycle.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-17-compaction-group-lifecycle" tabindex="0" role="region" aria-label="Compaction group lifecycle"><img src="diagrams/17-compaction-group-lifecycle.svg" width="2618" height="297" alt="Compaction group lifecycle"></div></figure>
+<p>Failure handling is omitted from this topology and described below. Executor boxes can contain native regions, JVM operators or both; the graph is not an assertion that a whole maintenance procedure converts to Comet.</p>
+<p><code>RewriteDataFilesSparkAction.execute</code> pins a starting snapshot, selects a planner/runner, builds the rewrite plan and chooses single-commit or partial-progress execution. A fixed driver thread pool bounded by <code>max-concurrent-file-group-rewrites</code> submits independent group work. Each group is its own Spark action and can have many partitions. Five concurrent groups does not mean five executor tasks. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java, line 178; opens the local source file" class="source-link">Action and pool</a>.</p>
+<p>The size-based planner filters candidate files, packs bounded groups and checks whether a group warrants rewriting. Limits on group bytes and input-file count prevent every large partition from becoming one unbounded rewrite unit. Selection is broader than just “files below target size”: oversized files and delete-related criteria can also matter. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewritePlanner.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewritePlanner.java, line 175; opens the local source file" class="source-link">Size-based grouping</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/BinPackRewriteFilePlanner.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/BinPackRewriteFilePlanner.java, line 1; opens the local source file" class="source-link">bin-pack selection</a>.</p>
+<p>The runner stages file tasks and reads them back as a group, then collects replacement file results. Bin-pack avoids redistribution when its output spec matches the original spec; changing specs can require range distribution. Sort and Z-order introduce additional key computation, ordering/shuffle and possible spill. <a href="15-arrow-in-iceberg-scan-and-rewrite.html#data-file-rewrite-versus-metadata-maintenance">Runner details</a>.</p>
+<h2 id="partial-progress-changes-publication-granularity">Partial progress changes publication granularity</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Option</th>
+<th>Checked default</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>max-concurrent-file-group-rewrites</code></td>
+<td>5</td>
+<td>Maximum simultaneous group rewrites submitted by the action</td>
+</tr>
+<tr>
+<td><code>max-file-group-size-bytes</code></td>
+<td>107374182400, or 100 GiB</td>
+<td>Planner&#39;s target upper bound for grouping input work; not an executor memory reservation</td>
+</tr>
+<tr>
+<td><code>max-file-group-input-files</code></td>
+<td><code>Long.MAX_VALUE</code></td>
+<td>Independent cap on input file count in a group</td>
+</tr>
+<tr>
+<td><code>partial-progress.enabled</code></td>
+<td>false</td>
+<td>Publish all groups together, or allow incremental group commits</td>
+</tr>
+<tr>
+<td><code>partial-progress.max-commits</code></td>
+<td>10</td>
+<td>Budget used to batch completed groups for publication</td>
+</tr>
+<tr>
+<td><code>use-starting-sequence-number</code></td>
+<td>true</td>
+<td>Preserve starting data age in replacement files</td>
+</tr>
+</tbody></table></div>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/actions/RewriteDataFiles.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/api/src/main/java/org/apache/iceberg/actions/RewriteDataFiles.java, line 35; opens the local source file" class="source-link">rewrite options</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewritePlanner.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewritePlanner.java, line 98; opens the local source file" class="source-link">group-size options</a>. The <a href="https://iceberg.apache.org/docs/latest/spark-procedures/#rewrite_data_files">public procedure reference</a> provides invocation syntax; local defaults above are read from source.</p>
+<p>With partial progress off, the action waits for all successful group rewrites before one commit. A rewrite failure triggers cleanup of completed unpublished outputs. The action-level task builder uses <code>noRetry</code>; that does not disable Spark&#39;s own task-attempt retries inside a group job.</p>
+<p>With partial progress on, completed groups are offered to a commit service. The checked batching formula is <code>groupsPerCommit = ceil(totalGroups / maxCommits)</code>. For 10 groups and a budget of 3 commits, the batches can contain 4, 4 and 2 groups if all complete. Completion order matters; these are not fixed input partition numbers. The test that injects failure into the second commit verifies six committed groups, unchanged rows, two new snapshots and no orphans in its fixture. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java, line 323; opens the local source file" class="source-link">Partial execution</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java, line 1336; opens the local source file" class="source-link">failure test</a>.</p>
+<p>Partial progress is not one atomic transaction over the whole maintenance action. Earlier successful snapshots remain published if later groups fail. Inspect committed-group results and failure policy rather than treating a returned action or exception as a universal all-or-nothing signal.</p>
+<h2 id="sequence-numbers-preserve-concurrent-delete-semantics">Sequence numbers preserve concurrent delete semantics</h2>
+<figure class="diagram" id="diagram-17-sequence-numbers-preserve-concurrent-delete-semantics"><figcaption><span>Sequence numbers preserve concurrent delete semantics</span><span class="diagram-tools"><button type="button" class="diagram-zoom" aria-pressed="false" aria-controls="view-17-sequence-numbers-preserve-concurrent-delete-semantics" hidden>Actual size</button><a href="diagrams/17-sequence-numbers-preserve-concurrent-delete-semantics.svg" target="_blank" rel="noopener">Open SVG</a><a class="source-link" href="diagrams/17-sequence-numbers-preserve-concurrent-delete-semantics.mmd">Mermaid</a></span></figcaption><div class="diagram-view" id="view-17-sequence-numbers-preserve-concurrent-delete-semantics" tabindex="0" role="region" aria-label="Sequence numbers preserve concurrent delete semantics"><img src="diagrams/17-sequence-numbers-preserve-concurrent-delete-semantics.svg" width="1505" height="703" alt="Sequence numbers preserve concurrent delete semantics"></div></figure>
+<p>The rewrite commit manager calls <code>validateFromSnapshot(startingSnapshotId)</code> and, by default, sets the new data files&#39; data sequence to the starting snapshot&#39;s sequence. In <code>MergingSnapshotProducer</code>, this causes the replaced-file validation to tolerate newer equality deletes while continuing to reject applicable newer position deletes. Equality deletes can apply to the new file&#39;s values; position deletes refer to the old file path/positions and cannot be blindly transferred to a replacement. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java, line 88; opens the local source file" class="source-link">Commit manager</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/MergingSnapshotProducer.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/MergingSnapshotProducer.java, line 475; opens the local source file" class="source-link">delete validation</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/MergingSnapshotProducer.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/MergingSnapshotProducer.java, line 519; opens the local source file" class="source-link">validation branch</a>.</p>
+<p>The core test <code>testRewriteDataAndAssignOldSequenceNumber</code> checks that new file data sequence stays old while the new manifest&#39;s sequence advances. Separate tests reject successive deletion-vector replacements against the file being rewritten. Preserving a data sequence is therefore not a blanket exemption from delete conflict checks. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java, line 316; opens the local source file" class="source-link">Old-sequence test</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/test/java/org/apache/iceberg/TestRewriteFiles.java, line 987; opens the local source file" class="source-link">DV conflict test</a>.</p>
+<h2 id="three-different-failures-and-recoveries">Three different failures and recoveries</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Failure</th>
+<th>Correct response boundary</th>
+<th>What not to assume</th>
+</tr>
+</thead><tbody><tr>
+<td>Executor task fails while writing</td>
+<td>Spark may retry the task; native/JVM cleanup handles known attempt files where possible</td>
+<td>Every failed attempt always cleans all files, including after abrupt process death</td>
+</tr>
+<tr>
+<td>Commit has a known stale-base conflict</td>
+<td>Iceberg refreshes/revalidates within its retry policy, or rejects incompatible replacement work</td>
+<td>More retries can fix a real serializable-isolation conflict</td>
+</tr>
+<tr>
+<td>Commit outcome is unknown</td>
+<td>Preserve potentially committed files and reconcile authoritative table state</td>
+<td>An exception means all output is unreferenced and safe to delete</td>
+</tr>
+</tbody></table></div>
+<p>The rewrite manager&#39;s <code>commitOrClean</code> explicitly avoids cleanup for <code>CommitStateUnknownException</code> and cleans known outputs only for an appropriate cleanable failure. The upstream action test commits successfully and then injects an unknown-state exception; it checks that the data and published snapshot survive. <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java, line 138; opens the local source file" class="source-link">Cleanup boundary</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java" title="/Users/srajak/Documents/repos/oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java, line 1728; opens the local source file" class="source-link">unknown-state test</a>.</p>
+<p>Comet&#39;s write tests separately exercise a conflicting concurrent append, failed-task cleanup, and a native mid-write storage failure followed by a Spark retry. These establish distinct intended behaviors; a passing scan query would not cover them. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala, line 526; opens the local source file" class="source-link">Conflict test</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergWriteActionSuite.scala, line 1861; opens the local source file" class="source-link">native retry test</a>.</p>
+<h2 id="capacity-model-for-a-large-rewrite">Capacity model for a large rewrite</h2>
+<p>These are accounting models, not measurements or sizing recommendations:</p>
+<pre><code>driver metadata pressure ~= surviving file descriptors + delete index + task groups + commit results
+executor live memory ~= active task state + native in-flight reads + sort/hash state + writer buffers
+open output streams ~= active write tasks * active partition writers per task
+rewrite duration ~= planning + scheduled read/reorder/write critical path + publication</code></pre>
+<p>Do not multiply group count, Spark tasks and native concurrency as if each had an independent guaranteed pool of cores. Concurrent group jobs compete for the same executor slots and storage limits. Sorting can spill; fanout can increase active writers; a commit service introduces another queue. More concurrency can improve overlap or increase contention depending on the current bottleneck.</p>
+<p>Illustrative planning memory: one million surviving descriptors at an assumed 1 KiB serialized size represent about 0.954 GiB before Java object overhead, delete indexes, collections and copies. This is not a measured descriptor size. Pruning 99% of those descriptors before collection changes that traffic dramatically; accelerating row arithmetic does not directly address it.</p>
+<p>For metadata-heavy jobs, measure planning duration, manifest counts/bytes, surviving descriptors and driver memory. For data-heavy jobs, measure input bytes, decode/delete CPU, shuffle/spill, output encoding, requests and per-stage skew. For write-heavy concurrency, measure commit attempts/conflicts and publication latency as well. A local <code>local[*]</code> run cannot establish multi-host network, external shuffle, executor-loss or object-store throttling behavior.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="16-iceberg-metadata-and-snapshots.html"><small>Previous</small>Metadata and snapshots</a><a href="18-iceberg-tests-and-benchmark-evidence.html"><small>Next</small>Tests and benchmark evidence</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

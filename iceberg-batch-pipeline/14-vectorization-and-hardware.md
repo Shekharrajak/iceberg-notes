@@ -202,7 +202,7 @@ Likewise, if a faster kernel improves only 30% of runtime by 2x, the idealized o
 
 ## Batch size and concurrency are coupled
 
-Small batches repeat iterator, dispatch, JNI, allocation and scheduling overhead. Larger batches amortize overhead but increase the working set, delay first output and can retain more memory. There is no universal batch size that equals the CPU cache size: multiple columns, input/output arrays and operator state coexist, and caches are shared.
+Small batches repeat iterator, dispatch, JNI, allocation and stream-polling overhead within a task. Spark schedules task attempts for partitions, rather than launching a new task for every Arrow batch. Larger batches amortize overhead but increase the working set, delay first output and can retain more memory. There is no universal batch size that equals the CPU cache size: multiple columns, input/output arrays and operator state coexist, and caches are shared.
 
 ```text
 approximate live scan memory = active tasks * in-flight files per task * per-file working set

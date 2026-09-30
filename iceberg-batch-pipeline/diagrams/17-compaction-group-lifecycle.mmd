@@ -1,0 +1,29 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":45},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph ACTION["Iceberg rewrite action on driver"]
+    S["Pin starting snapshot and select candidate files"]
+    G["Form bounded file groups"]
+    P["Submit groups through bounded thread pool"]
+    S --> G --> P
+  end
+  subgraph EXEC["Spark group jobs"]
+    R["Read group and apply deletes"]
+    O["Optional repartition sort or Z-order"]
+    W["Write and close replacement files"]
+    P --> R --> O --> W
+  end
+  subgraph COMMIT["Iceberg Java publication"]
+    Q{"Partial progress enabled?"}
+    A["Collect all completed groups"]
+    B["Queue completed groups in commit batches"]
+    V["Validate and publish replacement snapshot"]
+    W --> Q
+    Q -- "no" --> A --> V
+    Q -- "yes" --> B --> V
+  end
+  classDef action fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef execution fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  class S,G,P action
+  class R,O,W execution
+  class Q,A,B,V metadata

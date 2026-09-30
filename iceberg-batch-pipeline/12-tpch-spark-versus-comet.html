@@ -16,8 +16,11 @@
 <li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
 <li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
 <li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
-<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="12-tpch-spark-versus-comet.md">Markdown source</a></header><article><h1 id="tpc-h-spark-versus-comet-benchmark-findings">TPC-H Spark versus Comet benchmark findings</h1>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="12-tpch-spark-versus-comet.md">Markdown source</a></header><article><h1 id="tpc-h-spark-versus-comet-benchmark-findings">TPC-H Spark versus Comet benchmark findings</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#findings-and-confidence">Findings and confidence</a></li>
 <li><a href="#evidence-recovered">Evidence recovered</a></li>
 <li><a href="#historical-conditions-versus-current-defaults">Historical conditions versus current defaults</a></li>
@@ -109,6 +112,7 @@
 </tr>
 </tbody></table></div>
 <p>The JSON is deliberately named <strong>transcription</strong>: it was created from the talk&#39;s rounded table, not recovered from a benchmark process. The plans and chart images are copied unchanged from the existing talk assets so the notebook remains self-contained.</p>
+<p>The archived base chart&#39;s title says JVM scan versus native Rust scan, but the comparison changes eligible scan, compute and shuffle execution. It is not a scanner-only experiment. The corrected presentation uses a newly rendered execution-comparison chart from the same rounded timing rows; the original PNG remains preserved here for provenance.</p>
 <h2 id="historical-conditions-versus-current-defaults">Historical conditions versus current defaults</h2>
 <p>The <a href="file:///Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html" title="/Users/srajak/Documents/repos/talks/datafusion-comet-talk/presentation/index.html, line 998; opens the local source file" class="source-link">preserved presentation</a> reports macOS Apple Silicon, Spark 3.5.8, local mode, SF1, 22 queries and one measured base-table iteration. It also reports matching result hashes and native scan plans for all queries. Exact machine model, cores used, cache policy, raw hashes, Comet SHA/JAR checksum and full Spark configuration were not recovered.</p>
 <p>Do not fill those gaps with the current demo defaults. The current demo README recommends Spark 3.5.3, Scala 2.12, Java 17 and Iceberg runtime 1.8.1; that is a different recorded setup, not proof of the historical stack.</p>
@@ -334,7 +338,7 @@
 </tr>
 </tbody></table></div>
 <p><img class="evidence-image" src="assets/tpch/tpch-sf1-jvm-vs-native.png" alt="Preserved historic local SF1 chart comparing Spark Iceberg with Comet Iceberg"></p>
-<p>The original deck reports totals of <strong>29.33 s Spark and 14.56 s Comet</strong>, with a <strong>2.19x geometric mean</strong>. Adding its displayed query rows gives <strong>29.33 s and 14.59 s</strong>. From those rounded rows, the ratio of sums is <strong>2.0103x</strong>, total savings are <strong>14.74 s</strong>, and the geometric mean is <strong>2.1857x</strong>. The 0.03 s total difference may be rounding or transcription; without raw samples we cannot settle it. Preserve the distinction instead of manufacturing extra precision.</p>
+<p>The historical deck reported totals of <strong>29.33 s Spark and 14.56 s Comet</strong>, with a <strong>2.19x geometric mean</strong>. Adding its displayed query rows gives <strong>29.33 s and 14.59 s</strong>. From those rounded rows, the ratio of sums is <strong>2.0103x</strong>, total savings are <strong>14.74 s</strong>, and the geometric mean is <strong>2.1857x</strong>. The corrected presentation now displays these rounded-row sums and consistently recalculated ratios. The historical 0.03 s total difference may be rounding or transcription; without raw samples we cannot settle it. Preserve the distinction instead of manufacturing extra precision.</p>
 <pre><code>query ratio = Spark query time / Comet query time
 query time reduction = 1 - Comet query time / Spark query time
 suite ratio = sum of Spark query times / sum of Comet query times

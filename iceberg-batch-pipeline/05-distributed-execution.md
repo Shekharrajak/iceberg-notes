@@ -122,7 +122,7 @@ flowchart LR
   subgraph EB["Executor B"]
     JB["JVM task and shuffle fetcher"]
     NB["Native shuffle decode and operators"]
-    JB -- "JNI compressed-buffer handoff" --> NB
+    JB -- "JNI encoded-buffer handoff" --> NB
   end
   subgraph EXT["External storage and catalog"]
     C["Catalog service when remote"]
@@ -162,9 +162,10 @@ flowchart LR
   subgraph MAP["Map task"]
     N["Native child plan"]
     P["Hash, range, round-robin<br/>or single partitioning"]
-    EN["Encode compressed Arrow IPC blocks"]
-    SP["Buffer or spill partition data"]
-    N --> P --> EN --> SP
+    BF["Buffer Arrow batches<br/>and partition row indices"]
+    EN["Gather/coalesce rows and encode<br/>optionally compressed IPC to scratch"]
+    SP["Flush encoded scratch<br/>to spill or final output"]
+    N --> P --> BF --> EN --> SP
   end
   subgraph LOCAL["Spark shuffle storage"]
     F[("Map data and index files")]
@@ -183,12 +184,14 @@ flowchart LR
   classDef native fill:#ede9fe,stroke:#7c3aed,color:#3b0764
   classDef spark fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
   classDef ext fill:#f1f5f9,stroke:#64748b,color:#334155
-  class N,P,EN,SP,DE,OP native
+  class N,P,BF,EN,SP,DE,OP native
   class MS,GET,JNI spark
   class F ext
 ```
 
-The encoding/buffering/spilling boxes summarize the writer pipeline rather than prescribing a single buffer for all partitioner implementations. A supported native child can be fused under `ShuffleWriter(childNativeOp)` in one native plan. Spark still invokes the shuffle writer through its shuffle-map task contract.
+The row buffers and encoded-byte scratch serve different purposes. The multi-partition writer can retain Arrow batches and per-partition row indices, then gather/interleave selected rows when draining them. `BufBatchWriter` coalesces small batches, serializes completed batches into reusable byte scratch, and flushes those bytes to its underlying spill or output writer. Other partitioners have their own buffering paths; no single buffer layout is required for all of them. [Partition buffers](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/partitioners/multi_partition.rs:323), [encoding and flush](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/shuffle/src/writers/buf_batch_writer.rs:112).
+
+A supported native child can be fused under `ShuffleWriter(childNativeOp)` in one native plan. Spark still invokes the shuffle writer through its shuffle-map task contract. Compression is optional: `spark.shuffle.compress=false` selects uncompressed IPC bodies. [Compression configuration](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala:631).
 
 The local writer creates temporary data output, captures native partition offsets, computes partition lengths, and calls `IndexShuffleBlockResolver.writeMetadataFileAndCommit`. It returns `MapStatus`. A shuffle partition comprises contributions from many map tasks, not one globally shared writer file.
 
@@ -199,10 +202,11 @@ Range partitioning requires bounds; hash partitioning requires Spark-compatible 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#0f172a"}}}%%
 sequenceDiagram
-  box rgb(224, 242, 254) Driver metadata
+  box rgb(224, 242, 254) Map-output metadata
     participant M as MapOutputTracker
   end
   box rgb(220, 252, 231) Reduce executor JVM
+    participant R as CometShuffleManager
     participant F as ShuffleBlockFetcherIterator
     participant B as CometShuffleBlockIterator
   end
@@ -212,23 +216,26 @@ sequenceDiagram
   box rgb(237, 233, 254) Native reducer
     participant N as ShuffleScanExec
   end
-  F->>M: Resolve map block locations and sizes
-  M-->>F: Return block metadata
-  N->>B: Pull next compressed block
-  B->>F: Read stream header and body
+  R->>M: Resolve map block locations and sizes
+  M-->>R: Return blocksByAddress and fetch information
+  R->>F: Construct reader/fetcher with resolved block metadata
   F->>S: Fetch required blocks with in-flight limits
+  N->>B: Pull next encoded block
+  B->>F: Read stream header and body
   S-->>F: Return block bytes
   F-->>B: Supply InputStream bytes
   B-->>N: Return DirectByteBuffer and body length
   N->>N: Decode codec prefix and Arrow IPC stream
   N->>N: Adapt or validate schema as required
   N-->>B: Report decoded record count
-  Note over B,N: Consume compressed bytes before next pull reuses the buffer
+  Note over B,N: Consume encoded bytes before next pull reuses the buffer
 ```
 
-Each native shuffle block has Comet framing: an 8-byte compressed-length field, an 8-byte field-count field, then a body beginning with a 4-byte codec tag and encoded IPC. The length includes the field-count bytes but not its own length field. Bounds/truncation checks are part of the reader. Each encoded block is a self-contained Arrow IPC stream, including schema, needed dictionaries, a record batch and end marker.
+The shuffle manager obtains `blocksByAddress` from the executor's MapOutputTracker before constructing the block-store reader. That tracker can use cached map-output information or obtain it from the driver; the fetcher receives resolved metadata and starts fetching blocks. Fetch/prefetch and native consumption can overlap. [Location lookup](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometShuffleManager.scala:168), [fetcher construction](/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometBlockStoreShuffleReader.scala:58).
 
-One read path returns decoded `ColumnarBatch` objects through the JVM wrapper. The direct native `ShuffleScan` path instead receives compressed blocks and decodes in Rust. They should not be drawn as one mandatory JVM decode followed by another native decode.
+Each native shuffle block has Comet framing: an 8-byte encoded-body-length field, an 8-byte field-count field, then a body beginning with a 4-byte codec tag and encoded IPC. The length includes the field-count bytes but not its own length field. The decoder accepts compressed codecs or `NONE` for uncompressed output. Bounds/truncation checks are part of the reader. Each encoded block is a self-contained Arrow IPC stream, including schema, needed dictionaries, a record batch and end marker.
+
+One read path returns decoded `ColumnarBatch` objects through the JVM wrapper. The direct native `ShuffleScan` path instead receives encoded blocks and decodes in Rust. They should not be drawn as one mandatory JVM decode followed by another native decode.
 
 Spark's block fetcher limits bytes, requests and blocks in flight and uses configured transport retries. Comet passes these controls through. A network retry and a scheduler stage retry happen at different layers; see [fault tolerance](07-fault-tolerance.md).
 
@@ -238,7 +245,7 @@ The checked branch also supports native output routed to a JVM `ShufflePartition
 
 ```text
 Native partition writer -> bounded encoded output -> JNI pusher callback -> Celeborn transport -> remote shuffle storage
-Remote reader -> compressed stream -> native IPC decode -> reducer operators
+Remote reader -> encoded stream -> native IPC decode -> reducer operators
 ```
 
 Driver-owned `CometCelebornShuffleMaterialization` chooses a destination before downstream consumers depend on its output. A specifically handled size-limit failure can cancel the remote map job and materialize a fresh local dependency. Separate RDD/shuffle/stage identities fence late remote completion. This narrow fallback mechanism is not general mid-query fallback for any native error. Destination completion includes commit authorization and remote lifecycle checks.

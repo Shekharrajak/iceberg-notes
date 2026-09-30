@@ -1,0 +1,27 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":34,"rankSpacing":44},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b"}}}%%
+flowchart LR
+  subgraph DRIVER["Iceberg on Spark driver"]
+    S["Select snapshot and prune manifest summaries"]
+    Q{"Planning mode and cost checks"}
+    L["Local manifest reader pool"]
+    R["Collect matching descriptors and build tasks"]
+    S --> Q
+    Q -- "local" --> L --> R
+  end
+  subgraph PLAN["Spark planning executors"]
+    M["Read candidate manifests in JVM tasks"]
+    F["Filter data and delete descriptors"]
+    Q -- "distributed" --> M --> F
+    F --> R
+  end
+  subgraph DATA["Spark data execution"]
+    G["Split and group file tasks"]
+    E["Executor JVM reader or Comet native reader"]
+    R --> G --> E
+  end
+  classDef driver fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef metadata fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef data fill:#dcfce7,stroke:#16a34a,color:#14532d
+  class S,Q,L,R driver
+  class M,F metadata
+  class G,E data

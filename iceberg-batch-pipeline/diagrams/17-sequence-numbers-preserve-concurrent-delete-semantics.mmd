@@ -1,0 +1,21 @@
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","primaryTextColor":"#0f172a","lineColor":"#64748b","actorBkg":"#f8fafc","actorBorder":"#475569","actorTextColor":"#0f172a","signalColor":"#475569","signalTextColor":"#475569"}}}%%
+sequenceDiagram
+  box rgb(224, 242, 254) Independent operations
+    participant R as Rewrite job
+    participant D as Equality-delete writer
+  end
+  box rgb(254, 249, 195) Iceberg table
+    participant T as Metadata and validation
+  end
+  box rgb(220, 252, 231) Later reader
+    participant Q as Snapshot scan
+  end
+  R->>T: Select snapshot with sequence 10
+  R->>R: Read old files and produce replacement C
+  D->>T: Publish applicable equality delete at sequence 11
+  R->>T: Validate replacement and preserve data sequence 10
+  T-->>R: Publish replacement in snapshot sequence 12
+  Q->>T: Plan latest snapshot
+  T-->>Q: C has data sequence 10 and delete has sequence 11
+  Q->>Q: Apply matching equality delete to C
+  Note over R,Q: Illustrative compatible case<br/>Partition, field and conflict checks still apply

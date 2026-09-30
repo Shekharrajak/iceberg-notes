@@ -3,14 +3,13 @@ flowchart LR
   subgraph DRIVER["Spark planning"]
     L["Append, overwrite or eligible ReplaceData"]
     S["IcebergWriteStrategy<br/>split writer and committer"]
-    L --> S
+    G{"Native write gates<br/>and native child?"}
+    L --> S --> G
   end
   subgraph EXEC["Executor tasks"]
-    G{"Native write gates<br/>and native child?"}
     N["Comet native file writer"]
     J["Iceberg Java file writer"]
     A["JVM DataFile reconciliation<br/>and TaskCommit"]
-    S --> G
     G -- "yes" --> N --> A
     G -- "no" --> J --> A
   end

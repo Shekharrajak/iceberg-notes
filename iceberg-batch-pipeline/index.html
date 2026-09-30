@@ -16,8 +16,11 @@
 <li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
 <li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
 <li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
-<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 40 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="README.md">Markdown source</a></header><article><h1 id="iceberg-batch-pipeline-source-notebook">Iceberg batch pipeline source notebook</h1>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="README.md">Markdown source</a></header><article><h1 id="iceberg-batch-pipeline-source-notebook">Iceberg batch pipeline source notebook</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#reading-map">Reading map</a></li>
 <li><a href="#diagram-artifacts">Diagram artifacts</a></li>
 <li><a href="#findings-to-keep-straight">Findings to keep straight</a></li>
@@ -89,6 +92,18 @@
 <td>Decode, late materialization, delete correctness, I/O concurrency, writer buffering, compaction, and future read layout</td>
 </tr>
 <tr>
+<td><a href="16-iceberg-metadata-and-snapshots.html">Metadata manifests snapshots and commits</a></td>
+<td>Reference sharing, metadata pruning, snapshot/file sequences, catalog atomicity, optimistic retries, retention and inspection SQL</td>
+</tr>
+<tr>
+<td><a href="17-distributed-iceberg-and-compaction.html">Distributed Iceberg and compaction</a></td>
+<td>Remote manifest planning, driver limits, task/group concurrency, JVM/native boundaries, partial progress and concurrent deletes</td>
+</tr>
+<tr>
+<td><a href="18-iceberg-tests-and-benchmark-evidence.html">Integration tests and benchmark evidence</a></td>
+<td>Exact test assertions, historical XML findings, benchmark timing boundaries, focused commands and missing scale evidence</td>
+</tr>
+<tr>
 <td><a href="09-source-ledger.html">Source ledger</a></td>
 <td>Exact checkouts, source links, tests, limitations, and revalidation procedure</td>
 </tr>
@@ -149,6 +164,18 @@
 <tr>
 <td>A faster rewrite and faster post-rewrite reads are separate outcomes</td>
 <td>Measure rewrite CPU/I/O/commit cost separately from file layout and future pruning</td>
+</tr>
+<tr>
+<td>Distributed manifest planning still returns descriptors to the driver</td>
+<td>Remote metadata processing does not imply constant driver memory</td>
+</tr>
+<tr>
+<td>Compaction can retain the starting data sequence number</td>
+<td>Newer equality deletes remain applicable; position-delete conflicts still require validation</td>
+</tr>
+<tr>
+<td>A benchmark named rewrite may measure metadata only</td>
+<td>Inspect the timed block before comparing it with physical row compaction</td>
 </tr>
 </tbody></table></div>
 <h2 id="evidence-discipline">Evidence discipline</h2>

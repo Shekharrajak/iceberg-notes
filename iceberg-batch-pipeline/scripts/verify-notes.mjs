@@ -103,7 +103,10 @@ try {
         '12-tpch-spark-versus-comet.html': ['all-22-historic-timings', 'paired-q6-execution-flow', 'merge-on-read-evidence'],
         '13-arrow-memory-and-kernels.html': ['batch-and-buffer-ownership', 'c-interface-and-comet-handoff'],
         '14-vectorization-and-hardware.html': ['from-a-predicate-to-selected-rows', 'the-memory-hierarchy'],
-        '15-arrow-in-iceberg-scan-and-rewrite.html': ['scan-work-reduction-ladder', 'rewrite-coordination-sequence', 'native-write-data-path']
+        '15-arrow-in-iceberg-scan-and-rewrite.html': ['scan-work-reduction-ladder', 'rewrite-coordination-sequence', 'native-write-data-path'],
+        '16-iceberg-metadata-and-snapshots.html': ['metadata-object-graph', 'concurrent-append-commit-sequence'],
+        '17-distributed-iceberg-and-compaction.html': ['distributed-manifest-planning', 'compaction-group-lifecycle', 'sequence-numbers-preserve-concurrent-delete-semantics'],
+        '18-iceberg-tests-and-benchmark-evidence.html': ['tests-at-each-boundary', 'historical-local-test-reports', 'benchmark-inventory-and-timing-boundaries', 'comet-write-benchmark-sequence']
       };
       for (const id of evidenceSections[item.html] ?? []) {
         await page.evaluate(id => document.getElementById(id).scrollIntoView({ behavior: 'instant' }), id);
