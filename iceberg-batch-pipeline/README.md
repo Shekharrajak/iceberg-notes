@@ -4,7 +4,7 @@ These notes explain how Spark, Iceberg, Comet, DataFusion, and Arrow cooperate t
 
 The central model is simple: Spark owns distributed query execution; Iceberg owns table-state semantics; Comet accelerates eligible executor work. Reading, filtering, delete application, schema adaptation, and writing still carry correctness obligations inside the native region.
 
-Source check: 2026-09-30. The exact revisions, local modifications, code entry points, and test references are recorded in [the source ledger](09-source-ledger.md). No engine tests or benchmarks were executed for this notebook.
+Chapters 1-18 source check: 2026-09-30. The exact revisions, local modifications, code entry points, and test references are recorded in [the source ledger](09-source-ledger.md). No engine tests or benchmarks were executed for that original research. Chapter 19 adds captured October 2 local demo results, plans and Spark UI screenshots; these are not audited benchmarks.
 
 For browser reading, open the [formatted notebook](index.html). It combines the complete text, tables, code blocks and inline diagrams, with chapter navigation and diagram zoom controls. Markdown remains the editable source; no server or network connection is needed to read the HTML.
 
@@ -29,6 +29,7 @@ For browser reading, open the [formatted notebook](index.html). It combines the 
 | [Metadata manifests snapshots and commits](16-iceberg-metadata-and-snapshots.md) | Reference sharing, metadata pruning, snapshot/file sequences, catalog atomicity, optimistic retries, retention and inspection SQL |
 | [Distributed Iceberg and compaction](17-distributed-iceberg-and-compaction.md) | Remote manifest planning, driver limits, task/group concurrency, JVM/native boundaries, partial progress and concurrent deletes |
 | [Integration tests and benchmark evidence](18-iceberg-tests-and-benchmark-evidence.md) | Exact test assertions, historical XML findings, benchmark timing boundaries, focused commands and missing scale evidence |
+| [Reading Spark UI](19-reading-spark-ui.md) | Normal versus forced shuffle; Q1/Q3/Q9/Q18 plans, timings, annotated screenshots, DAG/stage/executor interpretation and limits |
 | [Source ledger](09-source-ledger.md) | Exact checkouts, source links, tests, limitations, and revalidation procedure |
 
 The existing [earlier mental-model notebook](../distributed-batch-pipeline-mental-model.md) is preserved. Prefer this collection for the qualified implementation details below.

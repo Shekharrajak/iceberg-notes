@@ -19,6 +19,7 @@
 <li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
 <li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
 <li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
 <li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="README.md">Markdown source</a></header><article><h1 id="iceberg-batch-pipeline-source-notebook">Iceberg batch pipeline source notebook</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#reading-map">Reading map</a></li>
@@ -28,7 +29,7 @@
 <li><a href="#the-one-sentence-to-remember">The one sentence to remember</a></li></ul></nav></details>
 <p>These notes explain how Spark, Iceberg, Comet, DataFusion, and Arrow cooperate to run a distributed batch pipeline. They are a presenter reference and a source-navigation guide, with a separately qualified analysis of the saved TPC-H benchmark evidence. They are not a compatibility promise or an audited TPC-H result.</p>
 <p>The central model is simple: Spark owns distributed query execution; Iceberg owns table-state semantics; Comet accelerates eligible executor work. Reading, filtering, delete application, schema adaptation, and writing still carry correctness obligations inside the native region.</p>
-<p>Source check: 2026-09-30. The exact revisions, local modifications, code entry points, and test references are recorded in <a href="09-source-ledger.html">the source ledger</a>. No engine tests or benchmarks were executed for this notebook.</p>
+<p>Chapters 1-18 source check: 2026-09-30. The exact revisions, local modifications, code entry points, and test references are recorded in <a href="09-source-ledger.html">the source ledger</a>. No engine tests or benchmarks were executed for that original research. Chapter 19 adds captured October 2 local demo results, plans and Spark UI screenshots; these are not audited benchmarks.</p>
 <p>For browser reading, open the <a href="index.html">formatted notebook</a>. It combines the complete text, tables, code blocks and inline diagrams, with chapter navigation and diagram zoom controls. Markdown remains the editable source; no server or network connection is needed to read the HTML.</p>
 <h2 id="reading-map">Reading map</h2>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
@@ -102,6 +103,10 @@
 <tr>
 <td><a href="18-iceberg-tests-and-benchmark-evidence.html">Integration tests and benchmark evidence</a></td>
 <td>Exact test assertions, historical XML findings, benchmark timing boundaries, focused commands and missing scale evidence</td>
+</tr>
+<tr>
+<td><a href="19-reading-spark-ui.html">Reading Spark UI</a></td>
+<td>Normal versus forced shuffle; Q1/Q3/Q9/Q18 plans, timings, annotated screenshots, DAG/stage/executor interpretation and limits</td>
 </tr>
 <tr>
 <td><a href="09-source-ledger.html">Source ledger</a></td>

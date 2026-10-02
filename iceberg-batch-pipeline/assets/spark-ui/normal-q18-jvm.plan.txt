@@ -1,0 +1,168 @@
+== Physical Plan ==
+TakeOrderedAndProject (30)
++- * HashAggregate (29)
+   +- Exchange (28)
+      +- * HashAggregate (27)
+         +- * Project (26)
+            +- * BroadcastHashJoin Inner BuildRight (25)
+               :- * Project (18)
+               :  +- * BroadcastHashJoin Inner BuildLeft (17)
+               :     :- BroadcastExchange (4)
+               :     :  +- * Filter (3)
+               :     :     +- * ColumnarToRow (2)
+               :     :        +- BatchScan local.tpch.customer (1)
+               :     +- * BroadcastHashJoin LeftSemi BuildRight (16)
+               :        :- * Filter (7)
+               :        :  +- * ColumnarToRow (6)
+               :        :     +- BatchScan local.tpch.orders (5)
+               :        +- BroadcastExchange (15)
+               :           +- * Project (14)
+               :              +- * Filter (13)
+               :                 +- * HashAggregate (12)
+               :                    +- Exchange (11)
+               :                       +- * HashAggregate (10)
+               :                          +- * ColumnarToRow (9)
+               :                             +- BatchScan local.tpch.lineitem (8)
+               +- BroadcastExchange (24)
+                  +- * BroadcastHashJoin LeftSemi BuildRight (23)
+                     :- * Filter (21)
+                     :  +- * ColumnarToRow (20)
+                     :     +- BatchScan local.tpch.lineitem (19)
+                     +- ReusedExchange (22)
+
+
+(1) BatchScan local.tpch.customer
+Output [2]: [c_custkey#0L, c_name#1]
+local.tpch.customer (branch=null) [filters=c_custkey IS NOT NULL, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [2]: [c_custkey#0L, c_name#1]
+
+(3) Filter [codegen id : 1]
+Input [2]: [c_custkey#0L, c_name#1]
+Condition : isnotnull(c_custkey#0L)
+
+(4) BroadcastExchange
+Input [2]: [c_custkey#0L, c_name#1]
+Arguments: HashedRelationBroadcastMode(List(input[0, bigint, false]),false), [plan_id=3866]
+
+(5) BatchScan local.tpch.orders
+Output [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+local.tpch.orders (branch=null) [filters=o_custkey IS NOT NULL, o_orderkey IS NOT NULL, groupedBy=]
+
+(6) ColumnarToRow
+Input [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+
+(7) Filter
+Input [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Condition : (isnotnull(o_custkey#57L) AND isnotnull(o_orderkey#56L))
+
+(8) BatchScan local.tpch.lineitem
+Output [2]: [l_orderkey#1254L, l_quantity#1258]
+local.tpch.lineitem (branch=null) [filters=, groupedBy=]
+
+(9) ColumnarToRow [codegen id : 2]
+Input [2]: [l_orderkey#1254L, l_quantity#1258]
+
+(10) HashAggregate [codegen id : 2]
+Input [2]: [l_orderkey#1254L, l_quantity#1258]
+Keys [1]: [l_orderkey#1254L]
+Functions [1]: [partial_sum(l_quantity#1258)]
+Aggregate Attributes [2]: [sum#1292, isEmpty#1293]
+Results [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]
+
+(11) Exchange
+Input [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]
+Arguments: hashpartitioning(l_orderkey#1254L, 8), ENSURE_REQUIREMENTS, [plan_id=3875]
+
+(12) HashAggregate [codegen id : 3]
+Input [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]
+Keys [1]: [l_orderkey#1254L]
+Functions [1]: [sum(l_quantity#1258)]
+Aggregate Attributes [1]: [sum(l_quantity#1258)#1252]
+Results [2]: [l_orderkey#1254L, sum(l_quantity#1258)#1252 AS sum(l_quantity#20)#1253]
+
+(13) Filter [codegen id : 3]
+Input [2]: [l_orderkey#1254L, sum(l_quantity#20)#1253]
+Condition : (isnotnull(sum(l_quantity#20)#1253) AND (sum(l_quantity#20)#1253 > 313.00))
+
+(14) Project [codegen id : 3]
+Output [1]: [l_orderkey#1254L]
+Input [2]: [l_orderkey#1254L, sum(l_quantity#20)#1253]
+
+(15) BroadcastExchange
+Input [1]: [l_orderkey#1254L]
+Arguments: HashedRelationBroadcastMode(List(input[0, bigint, true]),false), [plan_id=3881]
+
+(16) BroadcastHashJoin
+Left keys [1]: [o_orderkey#56L]
+Right keys [1]: [l_orderkey#1254L]
+Join type: LeftSemi
+Join condition: None
+
+(17) BroadcastHashJoin [codegen id : 7]
+Left keys [1]: [c_custkey#0L]
+Right keys [1]: [o_custkey#57L]
+Join type: Inner
+Join condition: None
+
+(18) Project [codegen id : 7]
+Output [5]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60]
+Input [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+
+(19) BatchScan local.tpch.lineitem
+Output [2]: [l_orderkey#16L, l_quantity#20]
+local.tpch.lineitem (branch=null) [filters=l_orderkey IS NOT NULL, groupedBy=]
+
+(20) ColumnarToRow [codegen id : 6]
+Input [2]: [l_orderkey#16L, l_quantity#20]
+
+(21) Filter [codegen id : 6]
+Input [2]: [l_orderkey#16L, l_quantity#20]
+Condition : isnotnull(l_orderkey#16L)
+
+(22) ReusedExchange [Reuses operator id: 15]
+Output [1]: [l_orderkey#1254L]
+
+(23) BroadcastHashJoin [codegen id : 6]
+Left keys [1]: [l_orderkey#16L]
+Right keys [1]: [l_orderkey#1254L]
+Join type: LeftSemi
+Join condition: None
+
+(24) BroadcastExchange
+Input [2]: [l_orderkey#16L, l_quantity#20]
+Arguments: HashedRelationBroadcastMode(List(input[0, bigint, false]),false), [plan_id=3963]
+
+(25) BroadcastHashJoin [codegen id : 7]
+Left keys [1]: [o_orderkey#56L]
+Right keys [1]: [l_orderkey#16L]
+Join type: Inner
+Join condition: None
+
+(26) Project [codegen id : 7]
+Output [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]
+Input [7]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_orderkey#16L, l_quantity#20]
+
+(27) HashAggregate [codegen id : 7]
+Input [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]
+Keys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]
+Functions [1]: [partial_sum(l_quantity#20)]
+Aggregate Attributes [2]: [sum#1288, isEmpty#1289]
+Results [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]
+
+(28) Exchange
+Input [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]
+Arguments: hashpartitioning(c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, 8), ENSURE_REQUIREMENTS, [plan_id=3978]
+
+(29) HashAggregate [codegen id : 8]
+Input [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]
+Keys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]
+Functions [1]: [sum(l_quantity#20)]
+Aggregate Attributes [1]: [sum(l_quantity#20)#1270]
+Results [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity#20)#1270 AS sum(l_quantity)#1271]
+
+(30) TakeOrderedAndProject
+Input [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#1271]
+Arguments: 100, [o_totalprice#59 DESC NULLS LAST, o_orderdate#60 ASC NULLS FIRST], [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#1271]
+

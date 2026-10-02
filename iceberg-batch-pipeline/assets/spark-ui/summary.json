@@ -1,0 +1,1126 @@
+[
+  {
+    "key": "normal-q1-jvm",
+    "mode": "normal",
+    "query": 1,
+    "engine": "jvm",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956089334",
+    "execution": 12,
+    "label": "JVM baseline | Q1 | measured 5",
+    "times": [
+      0.3909301670064451,
+      0.320669499997166,
+      0.29491583300114144,
+      0.26889279200986493,
+      0.2607895420078421
+    ],
+    "median": 0.29491583300114144,
+    "rows": 4,
+    "digest": "84d61928137bece2ba3a1bfd65113b540169ff7f7981be4879e4f9567ab20c84",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_returnflag\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"l_linestatus\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"sum_qty\",\"nullable\":true,\"type\":\"decimal(22,2)\"},{\"metadata\":{},\"name\":\"sum_base_price\",\"nullable\":true,\"type\":\"decimal(22,2)\"},{\"metadata\":{},\"name\":\"sum_disc_price\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"sum_charge\",\"nullable\":true,\"type\":\"decimal(38,6)\"},{\"metadata\":{},\"name\":\"avg_qty\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"avg_price\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"avg_disc\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"count_order\",\"nullable\":false,\"type\":\"long\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 233,
+    "sqlUrl": "http://localhost:18081/history/local-1790956089334/SQL/execution/?id=12",
+    "jobs": [
+      {
+        "id": 11,
+        "stages": [
+          27,
+          28,
+          29
+        ]
+      },
+      {
+        "id": 10,
+        "stages": [
+          25,
+          26
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q9-jvm",
+    "mode": "normal",
+    "query": 9,
+    "engine": "jvm",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956089334",
+    "execution": 18,
+    "label": "JVM baseline | Q9 | measured 5",
+    "times": [
+      0.5127898750070017,
+      0.46513116599817295,
+      0.46957320799992885,
+      0.42999383399728686,
+      0.4585080840042792
+    ],
+    "median": 0.46513116599817295,
+    "rows": 174,
+    "digest": "6310c413cb53cd7a030809c81b5b3916c5e501c7e21e906fd915df7e5e5acb12",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"nation\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"o_year\",\"nullable\":true,\"type\":\"integer\"},{\"metadata\":{},\"name\":\"sum_profit\",\"nullable\":true,\"type\":\"decimal(37,4)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 400,
+    "sqlUrl": "http://localhost:18081/history/local-1790956089334/SQL/execution/?id=18",
+    "jobs": [
+      {
+        "id": 53,
+        "stages": [
+          88,
+          89,
+          87
+        ]
+      },
+      {
+        "id": 52,
+        "stages": [
+          85,
+          86
+        ]
+      },
+      {
+        "id": 51,
+        "stages": [
+          84
+        ]
+      },
+      {
+        "id": 50,
+        "stages": [
+          83
+        ]
+      },
+      {
+        "id": 49,
+        "stages": [
+          82
+        ]
+      },
+      {
+        "id": 48,
+        "stages": [
+          81
+        ]
+      },
+      {
+        "id": 47,
+        "stages": [
+          80
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q18-jvm",
+    "mode": "normal",
+    "query": 18,
+    "engine": "jvm",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956089334",
+    "execution": 24,
+    "label": "JVM baseline | Q18 | measured 5",
+    "times": [
+      0.5293189169897232,
+      0.5187485420028679,
+      0.5205935830017552,
+      0.5175833340035751,
+      0.5212196670036064
+    ],
+    "median": 0.5205935830017552,
+    "rows": 0,
+    "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"c_name\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"c_custkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_totalprice\",\"nullable\":true,\"type\":\"decimal(12,2)\"},{\"metadata\":{\"__autoGeneratedAlias\":\"true\"},\"name\":\"sum(l_quantity)\",\"nullable\":true,\"type\":\"decimal(22,2)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 479,
+    "sqlUrl": "http://localhost:18081/history/local-1790956089334/SQL/execution/?id=24",
+    "jobs": [
+      {
+        "id": 77,
+        "stages": [
+          125,
+          124
+        ]
+      },
+      {
+        "id": 76,
+        "stages": [
+          123
+        ]
+      },
+      {
+        "id": 75,
+        "stages": [
+          121,
+          122
+        ]
+      },
+      {
+        "id": 74,
+        "stages": [
+          120
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q1-comet",
+    "mode": "normal",
+    "query": 1,
+    "engine": "comet",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956102813",
+    "execution": 12,
+    "label": "Comet native | Q1 | measured 5",
+    "times": [
+      0.2534469160018489,
+      0.21043487499991897,
+      0.18495137500576675,
+      0.17810366599587724,
+      0.1574039580009412
+    ],
+    "median": 0.18495137500576675,
+    "rows": 4,
+    "digest": "84d61928137bece2ba3a1bfd65113b540169ff7f7981be4879e4f9567ab20c84",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_returnflag\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"l_linestatus\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"sum_qty\",\"nullable\":true,\"type\":\"decimal(22,2)\"},{\"metadata\":{},\"name\":\"sum_base_price\",\"nullable\":true,\"type\":\"decimal(22,2)\"},{\"metadata\":{},\"name\":\"sum_disc_price\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"sum_charge\",\"nullable\":true,\"type\":\"decimal(38,6)\"},{\"metadata\":{},\"name\":\"avg_qty\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"avg_price\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"avg_disc\",\"nullable\":true,\"type\":\"decimal(16,6)\"},{\"metadata\":{},\"name\":\"count_order\",\"nullable\":false,\"type\":\"long\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 119,
+    "sqlUrl": "http://localhost:18081/history/local-1790956102813/SQL/execution/?id=12",
+    "jobs": [
+      {
+        "id": 11,
+        "stages": [
+          27,
+          28,
+          29
+        ]
+      },
+      {
+        "id": 10,
+        "stages": [
+          25,
+          26
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q9-comet",
+    "mode": "normal",
+    "query": 9,
+    "engine": "comet",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956102813",
+    "execution": 18,
+    "label": "Comet native | Q9 | measured 5",
+    "times": [
+      0.27422483399277553,
+      0.2637527089973446,
+      0.28711779200239107,
+      0.24249654200684745,
+      0.23917400000209454
+    ],
+    "median": 0.2637527089973446,
+    "rows": 174,
+    "digest": "6310c413cb53cd7a030809c81b5b3916c5e501c7e21e906fd915df7e5e5acb12",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"nation\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"o_year\",\"nullable\":true,\"type\":\"integer\"},{\"metadata\":{},\"name\":\"sum_profit\",\"nullable\":true,\"type\":\"decimal(37,4)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 159,
+    "sqlUrl": "http://localhost:18081/history/local-1790956102813/SQL/execution/?id=18",
+    "jobs": [
+      {
+        "id": 53,
+        "stages": [
+          88,
+          89,
+          87
+        ]
+      },
+      {
+        "id": 52,
+        "stages": [
+          85,
+          86
+        ]
+      },
+      {
+        "id": 51,
+        "stages": [
+          84
+        ]
+      },
+      {
+        "id": 50,
+        "stages": [
+          83
+        ]
+      },
+      {
+        "id": 49,
+        "stages": [
+          81
+        ]
+      },
+      {
+        "id": 48,
+        "stages": [
+          80
+        ]
+      },
+      {
+        "id": 47,
+        "stages": [
+          82
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q18-comet",
+    "mode": "normal",
+    "query": 18,
+    "engine": "comet",
+    "run": "ui-20261002T154807Z-4cBaYw",
+    "app": "local-1790956102813",
+    "execution": 24,
+    "label": "Comet native | Q18 | measured 5",
+    "times": [
+      0.20765675000438932,
+      0.19548854199820198,
+      0.20418874999450054,
+      0.2172528329974739,
+      0.1937983749958221
+    ],
+    "median": 0.20418874999450054,
+    "rows": 0,
+    "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"c_name\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"c_custkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_totalprice\",\"nullable\":true,\"type\":\"decimal(12,2)\"},{\"metadata\":{\"__autoGeneratedAlias\":\"true\"},\"name\":\"sum(l_quantity)\",\"nullable\":true,\"type\":\"decimal(22,2)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 137,
+    "sqlUrl": "http://localhost:18081/history/local-1790956102813/SQL/execution/?id=24",
+    "jobs": [
+      {
+        "id": 77,
+        "stages": [
+          129,
+          130,
+          131
+        ]
+      },
+      {
+        "id": 76,
+        "stages": [
+          128
+        ]
+      },
+      {
+        "id": 75,
+        "stages": [
+          126,
+          127
+        ]
+      },
+      {
+        "id": 74,
+        "stages": [
+          125
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q3-jvm",
+    "mode": "normal",
+    "query": 3,
+    "engine": "jvm",
+    "run": "ui-20261002T142024Z-lTlGwn",
+    "app": "local-1790950834553",
+    "execution": 14,
+    "label": "JVM baseline | Q3 | measured 5",
+    "times": [
+      0.29217554099159315,
+      0.28099116700468585,
+      0.2614218329981668,
+      0.26529300000402145,
+      0.2537989580014255
+    ],
+    "median": 0.26529300000402145,
+    "rows": 10,
+    "digest": "9e5c78ee77511a208b7d756ce0000d0719b944db711aa9fb2605d7939de05785",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"revenue\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_shippriority\",\"nullable\":true,\"type\":\"integer\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      }
+    },
+    "sqlDurationMs": 207,
+    "sqlUrl": "http://localhost:18081/history/local-1790950834553/SQL/execution/?id=14",
+    "jobs": [
+      {
+        "id": 23,
+        "stages": [
+          34,
+          35
+        ]
+      },
+      {
+        "id": 22,
+        "stages": [
+          33
+        ]
+      },
+      {
+        "id": 21,
+        "stages": [
+          32
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "normal-q3-comet",
+    "mode": "normal",
+    "query": 3,
+    "engine": "comet",
+    "run": "ui-20261002T142024Z-lTlGwn",
+    "app": "local-1790950825868",
+    "execution": 14,
+    "label": "Comet native | Q3 | measured 5",
+    "times": [
+      0.18164316700131167,
+      0.1667690830072388,
+      0.15455945899884682,
+      0.1622797919990262,
+      0.15503062499919906
+    ],
+    "median": 0.1622797919990262,
+    "rows": 10,
+    "digest": "9e5c78ee77511a208b7d756ce0000d0719b944db711aa9fb2605d7939de05785",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"revenue\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_shippriority\",\"nullable\":true,\"type\":\"integer\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      }
+    },
+    "sqlDurationMs": 96,
+    "sqlUrl": "http://localhost:18081/history/local-1790950825868/SQL/execution/?id=14",
+    "jobs": [
+      {
+        "id": 23,
+        "stages": [
+          39,
+          40,
+          41
+        ]
+      },
+      {
+        "id": 22,
+        "stages": [
+          38
+        ]
+      },
+      {
+        "id": 21,
+        "stages": [
+          37
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q3-jvm",
+    "mode": "forced",
+    "query": 3,
+    "engine": "jvm",
+    "run": "ui-20261002T152949Z-3MDG21",
+    "app": "local-1790954991540",
+    "execution": 8,
+    "label": "JVM baseline | forced shuffle-join | Q3 | measured 5",
+    "times": [
+      0.35959941599867307,
+      0.3198669580015121,
+      0.32742279100057203,
+      0.3254989580018446,
+      0.3046943750086939
+    ],
+    "median": 0.3254989580018446,
+    "rows": 10,
+    "digest": "9e5c78ee77511a208b7d756ce0000d0719b944db711aa9fb2605d7939de05785",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"revenue\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_shippriority\",\"nullable\":true,\"type\":\"integer\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      }
+    },
+    "sqlDurationMs": 252,
+    "sqlUrl": "http://localhost:18081/history/local-1790954991540/SQL/execution/?id=8",
+    "jobs": [
+      {
+        "id": 5,
+        "stages": [
+          27,
+          28,
+          25,
+          29,
+          26
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q3-comet",
+    "mode": "forced",
+    "query": 3,
+    "engine": "comet",
+    "run": "ui-20261002T152949Z-3MDG21",
+    "app": "local-1790954998990",
+    "execution": 8,
+    "label": "Comet native | forced shuffle-join | Q3 | measured 5",
+    "times": [
+      0.25952704100927804,
+      0.2019087080116151,
+      0.18946983400383033,
+      0.1781975829944713,
+      0.16730383300455287
+    ],
+    "median": 0.18946983400383033,
+    "rows": 10,
+    "digest": "9e5c78ee77511a208b7d756ce0000d0719b944db711aa9fb2605d7939de05785",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"l_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"revenue\",\"nullable\":true,\"type\":\"decimal(36,4)\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_shippriority\",\"nullable\":true,\"type\":\"integer\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      }
+    },
+    "sqlDurationMs": 110,
+    "sqlUrl": "http://localhost:18081/history/local-1790954998990/SQL/execution/?id=8",
+    "jobs": [
+      {
+        "id": 5,
+        "stages": [
+          33,
+          30,
+          34,
+          31,
+          35,
+          32
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q9-jvm",
+    "mode": "forced",
+    "query": 9,
+    "engine": "jvm",
+    "run": "ui-20261002T154900Z-JCnaw3",
+    "app": "local-1790956142005",
+    "execution": 12,
+    "label": "JVM baseline | forced shuffle-join | Q9 | measured 5",
+    "times": [
+      0.6446487919893116,
+      0.5858198329951847,
+      0.5868459589983104,
+      0.5583702500007348,
+      0.5432014170073671
+    ],
+    "median": 0.5858198329951847,
+    "rows": 174,
+    "digest": "6310c413cb53cd7a030809c81b5b3916c5e501c7e21e906fd915df7e5e5acb12",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"nation\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"o_year\",\"nullable\":true,\"type\":\"integer\"},{\"metadata\":{},\"name\":\"sum_profit\",\"nullable\":true,\"type\":\"decimal(37,4)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 466,
+    "sqlUrl": "http://localhost:18081/history/local-1790956142005/SQL/execution/?id=12",
+    "jobs": [
+      {
+        "id": 11,
+        "stages": [
+          143,
+          147,
+          139,
+          140,
+          137,
+          144,
+          141,
+          138,
+          148,
+          145,
+          142,
+          149,
+          146
+        ]
+      },
+      {
+        "id": 10,
+        "stages": [
+          135,
+          132,
+          129,
+          136,
+          133,
+          125,
+          126,
+          130,
+          127,
+          134,
+          131,
+          128
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q18-jvm",
+    "mode": "forced",
+    "query": 18,
+    "engine": "jvm",
+    "run": "ui-20261002T154900Z-JCnaw3",
+    "app": "local-1790956142005",
+    "execution": 18,
+    "label": "JVM baseline | forced shuffle-join | Q18 | measured 5",
+    "times": [
+      0.5911635419906816,
+      0.5779917499894509,
+      0.5826758329931181,
+      0.5931155830039643,
+      0.6022856249910546
+    ],
+    "median": 0.5911635419906816,
+    "rows": 0,
+    "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"c_name\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"c_custkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_totalprice\",\"nullable\":true,\"type\":\"decimal(12,2)\"},{\"metadata\":{\"__autoGeneratedAlias\":\"true\"},\"name\":\"sum(l_quantity)\",\"nullable\":true,\"type\":\"decimal(22,2)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 551,
+    "sqlUrl": "http://localhost:18081/history/local-1790956142005/SQL/execution/?id=18",
+    "jobs": [
+      {
+        "id": 17,
+        "stages": [
+          186,
+          190,
+          187,
+          191,
+          188,
+          189,
+          185
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q9-comet",
+    "mode": "forced",
+    "query": 9,
+    "engine": "comet",
+    "run": "ui-20261002T154900Z-JCnaw3",
+    "app": "local-1790956154952",
+    "execution": 12,
+    "label": "Comet native | forced shuffle-join | Q9 | measured 5",
+    "times": [
+      0.47789408300013747,
+      0.4695488750003278,
+      0.406659333006246,
+      0.43916270798945334,
+      0.4647018749965355
+    ],
+    "median": 0.4647018749965355,
+    "rows": 174,
+    "digest": "6310c413cb53cd7a030809c81b5b3916c5e501c7e21e906fd915df7e5e5acb12",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"nation\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"o_year\",\"nullable\":true,\"type\":\"integer\"},{\"metadata\":{},\"name\":\"sum_profit\",\"nullable\":true,\"type\":\"decimal(37,4)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 371,
+    "sqlUrl": "http://localhost:18081/history/local-1790956154952/SQL/execution/?id=12",
+    "jobs": [
+      {
+        "id": 11,
+        "stages": [
+          143,
+          147,
+          139,
+          140,
+          137,
+          144,
+          141,
+          138,
+          148,
+          145,
+          142,
+          149,
+          146
+        ]
+      },
+      {
+        "id": 10,
+        "stages": [
+          135,
+          132,
+          129,
+          136,
+          133,
+          125,
+          126,
+          130,
+          127,
+          134,
+          131,
+          128
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  },
+  {
+    "key": "forced-q18-comet",
+    "mode": "forced",
+    "query": 18,
+    "engine": "comet",
+    "run": "ui-20261002T154900Z-JCnaw3",
+    "app": "local-1790956154952",
+    "execution": 18,
+    "label": "Comet native | forced shuffle-join | Q18 | measured 5",
+    "times": [
+      0.3845752079942031,
+      0.40895174999604933,
+      0.4021699169970816,
+      0.3387056659994414,
+      0.3202490829862654
+    ],
+    "median": 0.3845752079942031,
+    "rows": 0,
+    "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "schema": "{\"fields\":[{\"metadata\":{},\"name\":\"c_name\",\"nullable\":true,\"type\":\"string\"},{\"metadata\":{},\"name\":\"c_custkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderkey\",\"nullable\":true,\"type\":\"long\"},{\"metadata\":{},\"name\":\"o_orderdate\",\"nullable\":true,\"type\":\"date\"},{\"metadata\":{},\"name\":\"o_totalprice\",\"nullable\":true,\"type\":\"decimal(12,2)\"},{\"metadata\":{\"__autoGeneratedAlias\":\"true\"},\"name\":\"sum(l_quantity)\",\"nullable\":true,\"type\":\"decimal(22,2)\"}],\"type\":\"struct\"}",
+    "snapshots": {
+      "customer": {
+        "table": "local.tpch.customer",
+        "id": "8063135658054984869"
+      },
+      "lineitem": {
+        "table": "local.tpch.lineitem",
+        "id": "5742963690429722330"
+      },
+      "nation": {
+        "table": "local.tpch.nation",
+        "id": "3152193368494141642"
+      },
+      "orders": {
+        "table": "local.tpch.orders",
+        "id": "9212787496283688110"
+      },
+      "part": {
+        "table": "local.tpch.part",
+        "id": "7680285850861420664"
+      },
+      "partsupp": {
+        "table": "local.tpch.partsupp",
+        "id": "8209867678698546432"
+      },
+      "supplier": {
+        "table": "local.tpch.supplier",
+        "id": "3405590020433592932"
+      }
+    },
+    "sqlDurationMs": 249,
+    "sqlUrl": "http://localhost:18081/history/local-1790956154952/SQL/execution/?id=18",
+    "jobs": [
+      {
+        "id": 17,
+        "stages": [
+          197,
+          190,
+          194,
+          191,
+          195,
+          192,
+          196,
+          193
+        ]
+      }
+    ],
+    "config": {
+      "spark.memory.offHeap.size": "8g",
+      "spark.sql.autoBroadcastJoinThreshold": "-1",
+      "spark.sql.adaptive.enabled": "false",
+      "spark.master": "local[8]",
+      "spark.sql.shuffle.partitions": "8"
+    }
+  }
+]

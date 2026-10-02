@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reading Spark UI: normal plans versus forced shuffle | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html" aria-current="page"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="19-reading-spark-ui.md">Markdown source</a></header><article><h1 id="reading-spark-ui-normal-plans-versus-forced-shuffle">Reading Spark UI: normal plans versus forced shuffle</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#the-mental-model">The mental model</a></li>
+<li><a href="#what-was-actually-measured">What was actually measured</a></li>
+<li><a href="#q1-a-shuffle-without-a-join">Q1: a shuffle without a join</a></li>
+<li><a href="#q3-the-clearest-join-and-shuffle-story">Q3: the clearest join-and-shuffle story</a></li>
+<li><a href="#q9-six-tables-five-joins-then-aggregation">Q9: six tables, five joins, then aggregation</a></li>
+<li><a href="#q18-aggregation-semi-joins-and-reused-work">Q18: aggregation, semi joins and reused work</a></li>
+<li><a href="#how-to-read-the-dag-and-ui">How to read the DAG and UI</a></li>
+<li><a href="#what-moves-between-distributed-workers">What moves between distributed workers?</a></li>
+<li><a href="#annotated-evidence-gallery">Annotated evidence gallery</a></li>
+<li><a href="#reproduce-and-navigate">Reproduce and navigate</a></li>
+<li><a href="#source-and-validation-evidence">Source and validation evidence</a></li></ul></nav></details>
+<p>Evidence captured from the October 2, 2026 local Iceberg demo. Start with Q3 for joins, Q1 for aggregation, Q9 for a longer join chain, and Q18 for semi-join/exchange-reuse semantics. These are CometBench-H queries derived from TPC-H, not audited TPC-H results.</p>
+<h2 id="the-mental-model">The mental model</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th></th>
+<th>Normal</th>
+<th>Forced shuffle</th>
+</tr>
+</thead><tbody><tr>
+<td>Broadcast joins</td>
+<td>Allowed when Spark considers them suitable</td>
+<td>Disabled in this runner</td>
+</tr>
+<tr>
+<td>Join strategy</td>
+<td>Spark chooses from the query, sizes and settings</td>
+<td>Selected queries must show sort-merge or shuffled-hash joins</td>
+</tr>
+<tr>
+<td>AQE in this demo</td>
+<td>Off by default; configurable</td>
+<td>Always off</td>
+</tr>
+<tr>
+<td>Purpose</td>
+<td>Compare ordinarily selected plans</td>
+<td>Compare JVM versus Comet shuffle-join execution</td>
+</tr>
+</tbody></table></div>
+<h3 id="normal-move-the-small-side">Normal: move the small side</h3>
+<p>If filtered customers are small enough:</p>
+<pre><code>Small customer input -&gt; broadcast a copy to executors
+Orders partitions -&gt; tasks join locally with that copy</code></pre>
+<p>This avoids repartitioning both inputs for that join. Normal does not mean no shuffle: Spark can select shuffle joins, and aggregation or ordering can require exchanges. The demo&#39;s AQE default is not a statement about stock Spark defaults.</p>
+<h3 id="forced-shuffle-bring-matching-keys-together">Forced shuffle: bring matching keys together</h3>
+<p>The runner sets both options for both engines:</p>
+<pre><code>spark.sql.autoBroadcastJoinThreshold=-1
+spark.sql.adaptive.enabled=false</code></pre>
+<pre><code>Customers -&gt; hash partition by customer key -&gt; local sort -+
+                                                          +-&gt; merge equal keys
+Orders -&gt; hash partition by customer key -&gt; local sort ----+</code></pre>
+<p>The captured Q3 plans use <code>SortMergeJoin</code> versus <code>CometSortMergeJoin</code>. Disabling broadcast alone does not guarantee sort-merge for arbitrary SQL; this runner also checks for a shuffle join and rejects a broadcast plan. Q1 has no join and is deliberately not part of forced-join mode.</p>
+<p>Present normal as &quot;What happens with the usual join selection?&quot; Present forced as &quot;What changes when both engines execute shuffle joins?&quot; Forced mode is an experiment, not a tuning recommendation. Compare JVM and Comet within the same mode, not normal JVM against forced Comet.</p>
+<h2 id="what-was-actually-measured">What was actually measured</h2>
+<p>Spark 3.5.3, Iceberg runtime 1.8.1, locally built Comet 1.1.0-SNAPSHOT; <code>local[8]</code>, eight shuffle partitions, AQE off, 4g driver memory and configured 8g Comet off-heap. One warm-up plus five measured executions per query/engine. The small <code>tpch_sf10m</code> fixture is roughly 2.9 MB of source data; its directory name is not a verified TPC-H scale factor. The Iceberg warehouse has multiple files and delete artifacts from the demo.</p>
+<p>The runner pins Iceberg snapshots, saves SQL and physical plans, and checks schema, row count and an order-independent exact result digest. Each paired run passed those checks. Matching digests are useful evidence for this fixture, not an exhaustive correctness proof or an ordering check.</p>
+<p>Harness latency covers <code>spark.sql(...).collect()</code>, excluding application startup, saved-plan export and result hashing. The UI&#39;s SQL duration measures a different interval. Screenshots below show measured iteration 5; the table uses the median of all five. Do not substitute a screenshot duration for the median.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Query / mode</th>
+<th>JVM median (ms)</th>
+<th>Comet median (ms)</th>
+<th>JVM / Comet</th>
+<th>Lower latency</th>
+<th>Rows</th>
+</tr>
+</thead><tbody><tr>
+<td>Q1 / normal</td>
+<td>294.9</td>
+<td>185.0</td>
+<td>1.59x</td>
+<td>37.3%</td>
+<td>4</td>
+</tr>
+<tr>
+<td>Q3 / normal</td>
+<td>265.3</td>
+<td>162.3</td>
+<td>1.63x</td>
+<td>38.8%</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Q3 / forced</td>
+<td>325.5</td>
+<td>189.5</td>
+<td>1.72x</td>
+<td>41.8%</td>
+<td>10</td>
+</tr>
+<tr>
+<td>Q9 / normal</td>
+<td>465.1</td>
+<td>263.8</td>
+<td>1.76x</td>
+<td>43.3%</td>
+<td>174</td>
+</tr>
+<tr>
+<td>Q9 / forced</td>
+<td>585.8</td>
+<td>464.7</td>
+<td>1.26x</td>
+<td>20.7%</td>
+<td>174</td>
+</tr>
+<tr>
+<td>Q18 / normal</td>
+<td>520.6</td>
+<td>204.2</td>
+<td>Not promoted</td>
+<td>Empty result</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Q18 / forced</td>
+<td>591.2</td>
+<td>384.6</td>
+<td>Not promoted</td>
+<td>Empty result</td>
+<td>0</td>
+</tr>
+</tbody></table></div>
+<p>These sub-second observations are sensitive to JVM/JIT warm-up, OS caches, run order and other laptop activity. Normal Q3 ran Comet first; the other pairs ran JVM first. They are not component microbenchmarks or evidence of multi-machine network speedups. Q18 returned no rows in both modes: keep it for plan explanation, not the headline performance claim.</p>
+<h2 id="q1-a-shuffle-without-a-join">Q1: a shuffle without a join</h2>
+<pre><code>Lineitem -&gt; ship-date filter -&gt; compute amounts -&gt; partial aggregates
+         -&gt; hash exchange(returnflag, linestatus) -&gt; final aggregates
+         -&gt; range exchange -&gt; local sort -&gt; collect four result rows</code></pre>
+<p>The captured cutoff is September 24, 1998. Follow the actual saved SQL rather than substituting another TPC-H parameter set. Partial aggregation reduces what is shuffled; final aggregation combines groups from all input partitions. Range partitioning plus local sorting implements the ordered output.</p>
+<p>JVM: <code>BatchScan -&gt; ColumnarToRow -&gt;</code> generated row-oriented filter/project/aggregate work. Comet: <code>CometIcebergNativeScan -&gt; CometFilter -&gt; CometProject -&gt; CometHashAggregate</code>, native exchanges, then <code>CometColumnarToRow</code> at the output. A columnar reader does not make every downstream JVM operator columnar. Spark&#39;s row path uses code generation and compact representations; it is not necessarily one heap object allocation per field.</p>
+<p>Where Comet can help: decoding, batch expressions, aggregation and shuffle serialization. The observed whole-query median is lower; these screenshots do not isolate each contribution. The first Comet exchange reports 91 shuffle records written, demonstrating partial aggregation, while individual node counters need not equal final result rows.</p>
+<h2 id="q3-the-clearest-join-and-shuffle-story">Q3: the clearest join-and-shuffle story</h2>
+<pre><code>Customer BUILDING + orders before 1995-03-15 -&gt; join on customer key
+Intermediate + lineitem shipped after 1995-03-15 -&gt; join on order key
+-&gt; revenue by order/date/priority -&gt; top ten orders</code></pre>
+<p>Normal plans use two broadcast hash joins. Forced plans use two sort-merge joins with four join-input exchanges:</p>
+<ol>
+<li>Customer and orders repartition by customer key; each receiver locally sorts its input and merges matching keys.</li>
+<li>The intermediate result and lineitem repartition by order key; receiving tasks sort and merge again.</li>
+<li>Partial/final revenue aggregation follows. In these forced plans the existing order-key partitioning satisfies grouping requirements, so there is no separate aggregation exchange between those aggregate operators.</li>
+<li><code>TakeOrderedAndProject</code> / <code>CometTakeOrderedAndProject</code> produces the top ten. Do not mistake this for sorting every input row globally. The Comet job includes an extra result stage; the physical operator tree and stage counts need not match one-to-one.</li>
+</ol>
+<p>The JVM job for measured execution 8 has stages 25-29: orders scan/shuffle (25), customer scan/shuffle (26), first join and order-key shuffle (27), lineitem scan/shuffle (28), second join/aggregation/top-N (29). Stage IDs are local to that application. The paired Comet job has six stages, 30-35; use its own labels, not the JVM numbering.</p>
+<p>Audience wording: &quot;Same snapshot, same query, same shuffle-join strategy. Spark still schedules the work; Comet changes the eligible data-processing and shuffle representation inside the tasks.&quot;</p>
+<h2 id="q9-six-tables-five-joins-then-aggregation">Q9: six tables, five joins, then aggregation</h2>
+<pre><code>Part name contains moccasin -&gt; join lineitem by part key
+-&gt; supplier / partsupp / orders / nation joins
+-&gt; sale amount minus supply cost -&gt; aggregate by nation/year -&gt; ordered output</code></pre>
+<p>Read the exact join order and composite keys in the saved plan: SQL table order is not the physical execution order. The six tables are part, supplier, lineitem, partsupp, orders and nation. The partsupp relationship requires both part and supplier keys; joining on only one would change the answer.</p>
+<p>Normal captures have five broadcast hash joins. Forced captures have five sort-merge joins, ten join-input exchanges, followed by aggregate and ordering exchanges. This is a useful second example of repeated partition/sort/join boundaries, not a claim that more shuffles make Comet&#39;s advantage larger. Here the forced Q9 advantage is smaller than normal Q9.</p>
+<p>The selected stage example is the stage with the largest summed executor runtime among jobs belonging to measured iteration 5. It illustrates task metrics, not the entire SQL duration:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Measured Q9 forced stage</th>
+<th>Tasks</th>
+<th>Summed executor runtime (ms)</th>
+<th>JVM GC (ms)</th>
+<th>Input bytes</th>
+<th>Shuffle write bytes</th>
+<th>Spill bytes</th>
+</tr>
+</thead><tbody><tr>
+<td>JVM stage 125</td>
+<td>41</td>
+<td>1204</td>
+<td>16</td>
+<td>2351238</td>
+<td>1617941</td>
+<td>0 disk / 0 memory</td>
+</tr>
+<tr>
+<td>COMET stage 125</td>
+<td>41</td>
+<td>323</td>
+<td>0</td>
+<td>2836562</td>
+<td>1645408</td>
+<td>0 disk / 0 memory</td>
+</tr>
+</tbody></table></div>
+<p>Both examples have 41 tasks and no reported spill. Input and shuffle bytes differ, so do not describe this as &quot;same bytes, faster network.&quot; Byte accounting and encoding can differ by reader/shuffle path. Summed executor runtime can exceed wall time because tasks overlap; subtracting these totals does not identify query time saved. Zero JVM GC is not proof of zero native allocation. The executor screenshots aggregate Q9, Q18 and warm-ups across the application, not just this stage.</p>
+<h2 id="q18-aggregation-semi-joins-and-reused-work">Q18: aggregation, semi joins and reused work</h2>
+<pre><code>Lineitem -&gt; sum(quantity) by order -&gt; retain sums &gt; 313
+-&gt; eligible order keys -&gt; semi-filter orders and lineitem
+-&gt; customer/orders/lineitem joins -&gt; grouped quantity -&gt; top 100</code></pre>
+<p>The saved query threshold is 313, not the commonly shown alternative 300. Spark transforms the <code>IN</code> subquery into left-semi joins: keep matching left rows without adding right-side columns. The captured plan contains semi joins in addition to inner joins, with <code>ReusedExchange</code> sharing an earlier exchange rather than recomputing an independent input. A repeated box is not automatically repeated network traffic.</p>
+<p>Normal uses broadcast joins; forced uses sort-merge joins and reused aggregate exchange work. Both return zero rows on this fixture. Empty downstream work makes the latency comparison unrepresentative of a populated large-order workload. Before presenting Q18 performance, use a larger representative dataset with qualifying orders and rerun both engines unchanged. Do not silently relax the predicate and continue calling it the same query.</p>
+<h2 id="how-to-read-the-dag-and-ui">How to read the DAG and UI</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>UI view</th>
+<th>Read this</th>
+<th>Avoid this conclusion</th>
+</tr>
+</thead><tbody><tr>
+<td>SQL / DataFrame</td>
+<td>Description, operator tree, scan filters, join keys/type, exchange partitioning, output rows and node metrics</td>
+<td>Execution ID 8 in two apps alone proves the same query</td>
+</tr>
+<tr>
+<td>Job DAG</td>
+<td>Follow input dependencies through exchanges to result work; expand DAG Visualization</td>
+<td>Every blue box is one task or one executor</td>
+</tr>
+<tr>
+<td>Stage boundary</td>
+<td>A group of tasks with dependencies on upstream shuffle output</td>
+<td>Stage number or visual width is elapsed time</td>
+</tr>
+<tr>
+<td>WholeStageCodegen</td>
+<td>Fused JVM operator region; expand SQL details to see operators</td>
+<td>Codegen ID is a Spark stage ID</td>
+</tr>
+<tr>
+<td>Stage details</td>
+<td>Task count, duration distribution, input/shuffle bytes, fetch wait, spill and GC</td>
+<td>Sum of task times equals query wall time</td>
+</tr>
+<tr>
+<td>Executors</td>
+<td>Where tasks ran; per-executor totals and imbalance</td>
+<td>Application totals belong only to the selected query</td>
+</tr>
+<tr>
+<td>Environment</td>
+<td>Effective AQE, broadcast threshold, shuffle partitions and master</td>
+<td>A config value proves an operator was actually used</td>
+</tr>
+<tr>
+<td>Storage</td>
+<td>Persisted Spark RDD/DataFrame blocks when present</td>
+<td>This tab inventories Iceberg files or object-store caching</td>
+</tr>
+</tbody></table></div>
+<p>Read the physical plan from scan leaves toward its root. In UI drawings, follow arrowheads; layout orientation varies. Stage-group borders surround dependencies; arrows are not literal network sockets. An Exchange may appear on both producer and consumer sides of the DAG: do not count duplicate visual labels as distinct physical exchanges. Check retries/failed stages separately before telling a performance story.</p>
+<p>Matching a pair: same saved SQL and mode -&gt; same pinned snapshots -&gt; same query label and iteration -&gt; matched schema/count/hash -&gt; inspect both physical plans -&gt; compare timings. IDs are scoped to each app. The linked manifest records application IDs, execution IDs, labels and job/stage membership.</p>
+<h2 id="what-moves-between-distributed-workers">What moves between distributed workers?</h2>
+<pre><code>Driver -&gt; plan stages -&gt; schedule partition tasks on executors
+Map task -&gt; filter/project/join input -&gt; partition by key -&gt; shuffle blocks
+Reduce task -&gt; fetch its blocks -&gt; decode -&gt; sort/join/aggregate
+Final tasks -&gt; small query result -&gt; driver collect()</code></pre>
+<p>On a cluster, reducers fetch remote blocks through Spark&#39;s shuffle transport, or read local blocks when colocated. Ordinary shuffle data does not all pass through the driver. Broadcast distribution and final result collection have different paths. Spark still owns stage dependencies, task scheduling, retries and shuffle availability with Comet enabled. See <a href="05-distributed-execution.html">distributed execution</a> for failure and network paths.</p>
+<p>This capture uses <code>local[8]</code>: eight task threads in a single local executor/driver process, not eight remote executors. It demonstrates partitioning, task scheduling and local shuffle, not remote networking, multi-host scaling or skew recovery.</p>
+<h3 id="jvm-exchange-versus-comet-exchange">JVM exchange versus Comet exchange</h3>
+<p>JVM Spark serializes its row representation for shuffle. The captured <code>CometExchange</code> plans identify <code>CometNativeShuffle</code>: eligible native work partitions and encodes/compresses columnar batches; Spark coordinates blocks and fetches, and the native reader decodes them. Comet has multiple shuffle paths, so do not generalize this label to every configuration. Read the captured plan and <a href="04-native-runtime-and-serde.html">native runtime/serialization</a>.</p>
+<p>Columnar batches can reduce representation conversions, amortize dispatch and expose contiguous typed data to efficient kernels. SIMD can process several values per instruction in eligible kernels; not every hash lookup, sort, string operation or join is SIMD. These runs have no hardware-counter or instruction-profile evidence. Native means compiled Rust/native machine code invoked from the JVM; it does not mean zero-copy network transport or no serialization. Arrow FFI can share buffers within a process; network/disk exchange still needs an encoded representation.</p>
+<p><strong>Observed:</strong> native operators and lower paired medians on this local fixture. <strong>Source-backed mechanism:</strong> different batch/operator/shuffle implementations. <strong>Not isolated:</strong> how much of the gain came from scan, conversion, join, SIMD, allocation or compression. Measure those with controlled variants and profiles before making a causal percentage claim.</p>
+<h2 id="annotated-evidence-gallery">Annotated evidence gallery</h2>
+<p>Orange outlines identify exchanges, green joins/aggregates and purple row conversions where those nodes are exposed. An annotation banner was added before capture; metric values were not edited. Use the full-resolution screenshot links for readable counters. The two Q3 DAGs are embedded below; the very tall SQL graphs open separately to avoid loading all high-resolution images at once. DAG codegen groups hide individual operators; use the saved physical plan to expand the explanation.</p>
+<h3 id="q1-normal">Q1 normal</h3>
+<p><a href="assets/spark-ui/q1.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 12, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956089334</code>. Jobs: 11, 10.</p>
+<p><a href="http://localhost:18081/history/local-1790956089334/SQL/execution/?id=12">Live SQL UI</a> - <a href="assets/spark-ui/normal-q1-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q1-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q1-jvm-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 12, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956102813</code>. Jobs: 11, 10.</p>
+<p><a href="http://localhost:18081/history/local-1790956102813/SQL/execution/?id=12">Live SQL UI</a> - <a href="assets/spark-ui/normal-q1-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q1-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q1-comet-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+<h3 id="q3-normal">Q3 normal</h3>
+<p><a href="assets/spark-ui/q3.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 14, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790950834553</code>. Jobs: 23, 22, 21.</p>
+<p><a href="http://localhost:18081/history/local-1790950834553/SQL/execution/?id=14">Live SQL UI</a> - <a href="assets/spark-ui/normal-q3-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q3-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q3-jvm-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 14, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790950825868</code>. Jobs: 23, 22, 21.</p>
+<p><a href="http://localhost:18081/history/local-1790950825868/SQL/execution/?id=14">Live SQL UI</a> - <a href="assets/spark-ui/normal-q3-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q3-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q3-comet-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+<h3 id="q3-forced">Q3 forced</h3>
+<p><a href="assets/spark-ui/q3.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 8, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790954991540</code>. Jobs: 5.</p>
+<p><a href="http://localhost:18081/history/local-1790954991540/SQL/execution/?id=8">Live SQL UI</a> - <a href="assets/spark-ui/forced-q3-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q3-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q3-jvm-sql.png">full-resolution SQL screenshot</a></p>
+<p><a href="assets/spark-ui/forced-q3-jvm-dag.png">Full-resolution dag</a></p>
+<p><img class="evidence-image" src="assets/spark-ui/forced-q3-jvm-dag.png" alt="forced-q3-jvm dag"></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 8, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790954998990</code>. Jobs: 5.</p>
+<p><a href="http://localhost:18081/history/local-1790954998990/SQL/execution/?id=8">Live SQL UI</a> - <a href="assets/spark-ui/forced-q3-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q3-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q3-comet-sql.png">full-resolution SQL screenshot</a></p>
+<p><a href="assets/spark-ui/forced-q3-comet-dag.png">Full-resolution dag</a></p>
+<p><img class="evidence-image" src="assets/spark-ui/forced-q3-comet-dag.png" alt="forced-q3-comet dag"></p>
+&lt;/details&gt;
+
+<h3 id="q9-normal">Q9 normal</h3>
+<p><a href="assets/spark-ui/q9.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 18, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956089334</code>. Jobs: 53, 52, 51, 50, 49, 48, 47.</p>
+<p><a href="http://localhost:18081/history/local-1790956089334/SQL/execution/?id=18">Live SQL UI</a> - <a href="assets/spark-ui/normal-q9-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q9-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q9-jvm-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 18, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956102813</code>. Jobs: 53, 52, 51, 50, 49, 48, 47.</p>
+<p><a href="http://localhost:18081/history/local-1790956102813/SQL/execution/?id=18">Live SQL UI</a> - <a href="assets/spark-ui/normal-q9-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q9-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q9-comet-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+<h3 id="q9-forced">Q9 forced</h3>
+<p><a href="assets/spark-ui/q9.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 12, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956142005</code>. Jobs: 11, 10.</p>
+<p><a href="http://localhost:18081/history/local-1790956142005/SQL/execution/?id=12">Live SQL UI</a> - <a href="assets/spark-ui/forced-q9-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q9-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q9-jvm-sql.png">full-resolution SQL screenshot</a></p>
+<p><a href="assets/spark-ui/forced-q9-jvm-stage.png">Full-resolution stage</a></p>
+<p><a href="assets/spark-ui/forced-q9-jvm-executors.png">Full-resolution executors</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 12, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956154952</code>. Jobs: 11, 10.</p>
+<p><a href="http://localhost:18081/history/local-1790956154952/SQL/execution/?id=12">Live SQL UI</a> - <a href="assets/spark-ui/forced-q9-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q9-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q9-comet-sql.png">full-resolution SQL screenshot</a></p>
+<p><a href="assets/spark-ui/forced-q9-comet-stage.png">Full-resolution stage</a></p>
+<p><a href="assets/spark-ui/forced-q9-comet-executors.png">Full-resolution executors</a></p>
+&lt;/details&gt;
+
+<h3 id="q18-normal">Q18 normal</h3>
+<p><a href="assets/spark-ui/q18.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 24, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956089334</code>. Jobs: 77, 76, 75, 74.</p>
+<p><a href="http://localhost:18081/history/local-1790956089334/SQL/execution/?id=24">Live SQL UI</a> - <a href="assets/spark-ui/normal-q18-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q18-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q18-jvm-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 24, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956102813</code>. Jobs: 77, 76, 75, 74.</p>
+<p><a href="http://localhost:18081/history/local-1790956102813/SQL/execution/?id=24">Live SQL UI</a> - <a href="assets/spark-ui/normal-q18-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/normal-q18-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/normal-q18-comet-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+<h3 id="q18-forced">Q18 forced</h3>
+<p><a href="assets/spark-ui/q18.sql">Saved SQL</a></p>
+&lt;details&gt;
+&lt;summary&gt;JVM - SQL 18, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956142005</code>. Jobs: 17.</p>
+<p><a href="http://localhost:18081/history/local-1790956142005/SQL/execution/?id=18">Live SQL UI</a> - <a href="assets/spark-ui/forced-q18-jvm.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q18-jvm-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q18-jvm-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+&lt;details&gt;
+&lt;summary&gt;COMET - SQL 18, measured iteration 5&lt;/summary&gt;
+
+<p>Application: <code>local-1790956154952</code>. Jobs: 17.</p>
+<p><a href="http://localhost:18081/history/local-1790956154952/SQL/execution/?id=18">Live SQL UI</a> - <a href="assets/spark-ui/forced-q18-comet.plan.txt">physical plan</a> - <a href="assets/spark-ui/forced-q18-comet-metrics.json">node metrics</a> - <a href="assets/spark-ui/forced-q18-comet-sql.png">full-resolution SQL screenshot</a></p>
+&lt;/details&gt;
+
+
+<h2 id="reproduce-and-navigate">Reproduce and navigate</h2>
+<p>From the talk repository&#39;s <code>demo</code> directory, after preflight and warehouse setup:</p>
+<pre><code>UI_QUERIES=&quot;1,3,9,18&quot; ./scripts/06-run-ui-comparison.sh
+UI_FORCE_SHUFFLE_JOIN=true UI_QUERIES=&quot;3,9,18&quot; ./scripts/06-run-ui-comparison.sh
+SPARK_HISTORY_PORT=18081 ./scripts/07-start-history-server.sh</code></pre>
+<p>Use the generated comparison HTML to choose a labeled query/iteration, then open its History Server SQL link. The URL component is <code>/SQL/</code>, case-sensitive. The helper includes the Iceberg and Comet jars when replaying custom metrics. Localhost links work only while the local server and event logs are available; the screenshots, SQL, plans and curated JSON here remain readable offline.</p>
+<h2 id="source-and-validation-evidence">Source and validation evidence</h2>
+<ul>
+<li>Demo source at <a href="https://github.com/Shekharrajak/CoC-Glasgow-2026/tree/54f000c/demo">talk revision 54f000c</a>: <code>scripts/06-run-ui-comparison.sh</code>, <code>src/ui_comparison.py</code>, <code>src/test_ui_comparison.py</code> and <code>scripts/07-start-history-server.sh</code>. These define modes, snapshot pinning, timing, result checks and execution-link mapping. The five runner unit tests passed in the preceding demo work; no engine tests were rerun for this documentation capture.</li>
+<li>Comet source baseline <a href="https://github.com/apache/datafusion-comet/tree/184accac5">184accac5</a>: <code>spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometShuffleExchangeExec.scala</code>, <code>CometShuffleManager.scala</code> in that directory, and <code>docs/source/contributor-guide/native_shuffle.md</code>. The local build includes pre-existing Iceberg scan/test and benchmark configuration edits; this is not a pristine release-binary claim.</li>
+<li>Inspected coverage entry points: <code>spark/src/test/scala/org/apache/comet/exec/CometJoinSuite.scala</code>, <code>spark/src/test/scala/org/apache/spark/sql/comet/execution/shuffle/CometNativeShuffleWriterSuite.scala</code> and <code>CometNativeShuffleInputRDDSuite.scala</code>. Named tests describe intended coverage, not a new passing engine-suite result.</li>
+<li>JVM source entry points: Spark <code>sql/core/src/main/scala/org/apache/spark/sql/execution/Columnar.scala</code> (<code>ColumnarToRowExec</code>) and <code>exchange/ShuffleExchangeExec.scala</code> (<code>UnsafeRowSerializer</code>, shuffle dependency preparation). The reference checkout is not necessarily the runtime revision; saved Spark 3.5.3 plans are the authority for these observations.</li>
+<li><a href="assets/spark-ui/summary.json">Capture manifest and all five timing samples</a> records the selected executions, snapshots, results, curated settings and local links. SQL metric JSON accompanies every screenshot. No full environment dump, event log or credential-bearing configuration is published.</li>
+</ul>
+<p>Next evidence needed: representative scale, nonempty Q18, interleaved/repeated engine order, true multi-executor remote fetch metrics, task skew distributions and CPU/hardware profiles. These captures explain execution; they do not replace those experiments.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="18-iceberg-tests-and-benchmark-evidence.html"><small>Previous</small>Tests and benchmark evidence</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

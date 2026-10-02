@@ -1,0 +1,53 @@
+== Physical Plan ==
+* Sort (9)
++- Exchange (8)
+   +- * HashAggregate (7)
+      +- Exchange (6)
+         +- * HashAggregate (5)
+            +- * Project (4)
+               +- * Filter (3)
+                  +- * ColumnarToRow (2)
+                     +- BatchScan local.tpch.lineitem (1)
+
+
+(1) BatchScan local.tpch.lineitem
+Output [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]
+local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_shipdate <= 10493, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]
+
+(3) Filter [codegen id : 1]
+Input [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]
+Condition : (l_shipdate#26 <= 1998-09-24)
+
+(4) Project [codegen id : 1]
+Output [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25]
+Input [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]
+
+(5) HashAggregate [codegen id : 1]
+Input [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25]
+Keys [2]: [l_returnflag#24, l_linestatus#25]
+Functions [8]: [partial_sum(l_quantity#20), partial_sum(l_extendedprice#21), partial_sum((l_extendedprice#21 * (1 - l_discount#22))), partial_sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23))), partial_avg(l_quantity#20), partial_avg(l_extendedprice#21), partial_avg(l_discount#22), partial_count(1)]
+Aggregate Attributes [15]: [sum#674, isEmpty#675, sum#676, isEmpty#677, sum#678, isEmpty#679, sum#680, isEmpty#681, sum#682, count#683L, sum#684, count#685L, sum#686, count#687L, count#688L]
+Results [17]: [l_returnflag#24, l_linestatus#25, sum#689, isEmpty#690, sum#691, isEmpty#692, sum#693, isEmpty#694, sum#695, isEmpty#696, sum#697, count#698L, sum#699, count#700L, sum#701, count#702L, count#703L]
+
+(6) Exchange
+Input [17]: [l_returnflag#24, l_linestatus#25, sum#689, isEmpty#690, sum#691, isEmpty#692, sum#693, isEmpty#694, sum#695, isEmpty#696, sum#697, count#698L, sum#699, count#700L, sum#701, count#702L, count#703L]
+Arguments: hashpartitioning(l_returnflag#24, l_linestatus#25, 8), ENSURE_REQUIREMENTS, [plan_id=368]
+
+(7) HashAggregate [codegen id : 2]
+Input [17]: [l_returnflag#24, l_linestatus#25, sum#689, isEmpty#690, sum#691, isEmpty#692, sum#693, isEmpty#694, sum#695, isEmpty#696, sum#697, count#698L, sum#699, count#700L, sum#701, count#702L, count#703L]
+Keys [2]: [l_returnflag#24, l_linestatus#25]
+Functions [8]: [sum(l_quantity#20), sum(l_extendedprice#21), sum((l_extendedprice#21 * (1 - l_discount#22))), sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23))), avg(l_quantity#20), avg(l_extendedprice#21), avg(l_discount#22), count(1)]
+Aggregate Attributes [8]: [sum(l_quantity#20)#650, sum(l_extendedprice#21)#651, sum((l_extendedprice#21 * (1 - l_discount#22)))#655, sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23)))#656, avg(l_quantity#20)#652, avg(l_extendedprice#21)#653, avg(l_discount#22)#654, count(1)#649L]
+Results [10]: [l_returnflag#24, l_linestatus#25, sum(l_quantity#20)#650 AS sum_qty#641, sum(l_extendedprice#21)#651 AS sum_base_price#642, sum((l_extendedprice#21 * (1 - l_discount#22)))#655 AS sum_disc_price#643, sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23)))#656 AS sum_charge#644, avg(l_quantity#20)#652 AS avg_qty#645, avg(l_extendedprice#21)#653 AS avg_price#646, avg(l_discount#22)#654 AS avg_disc#647, count(1)#649L AS count_order#648L]
+
+(8) Exchange
+Input [10]: [l_returnflag#24, l_linestatus#25, sum_qty#641, sum_base_price#642, sum_disc_price#643, sum_charge#644, avg_qty#645, avg_price#646, avg_disc#647, count_order#648L]
+Arguments: rangepartitioning(l_returnflag#24 ASC NULLS FIRST, l_linestatus#25 ASC NULLS FIRST, 8), ENSURE_REQUIREMENTS, [plan_id=372]
+
+(9) Sort [codegen id : 3]
+Input [10]: [l_returnflag#24, l_linestatus#25, sum_qty#641, sum_base_price#642, sum_disc_price#643, sum_charge#644, avg_qty#645, avg_price#646, avg_disc#647, count_order#648L]
+Arguments: [l_returnflag#24 ASC NULLS FIRST, l_linestatus#25 ASC NULLS FIRST], true, 0
+

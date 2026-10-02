@@ -1,0 +1,115 @@
+== Physical Plan ==
+TakeOrderedAndProject (21)
++- * HashAggregate (20)
+   +- Exchange (19)
+      +- * HashAggregate (18)
+         +- * Project (17)
+            +- * BroadcastHashJoin Inner BuildRight (16)
+               :- * Project (10)
+               :  +- * BroadcastHashJoin Inner BuildLeft (9)
+               :     :- BroadcastExchange (5)
+               :     :  +- * Project (4)
+               :     :     +- * Filter (3)
+               :     :        +- * ColumnarToRow (2)
+               :     :           +- BatchScan local.tpch.customer (1)
+               :     +- * Filter (8)
+               :        +- * ColumnarToRow (7)
+               :           +- BatchScan local.tpch.orders (6)
+               +- BroadcastExchange (15)
+                  +- * Project (14)
+                     +- * Filter (13)
+                        +- * ColumnarToRow (12)
+                           +- BatchScan local.tpch.lineitem (11)
+
+
+(1) BatchScan local.tpch.customer
+Output [2]: [c_custkey#0L, c_mktsegment#6]
+local.tpch.customer (branch=null) [filters=c_mktsegment IS NOT NULL, c_mktsegment = 'BUILDING', c_custkey IS NOT NULL, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [2]: [c_custkey#0L, c_mktsegment#6]
+
+(3) Filter [codegen id : 1]
+Input [2]: [c_custkey#0L, c_mktsegment#6]
+Condition : ((isnotnull(c_mktsegment#6) AND (c_mktsegment#6 = BUILDING)) AND isnotnull(c_custkey#0L))
+
+(4) Project [codegen id : 1]
+Output [1]: [c_custkey#0L]
+Input [2]: [c_custkey#0L, c_mktsegment#6]
+
+(5) BroadcastExchange
+Input [1]: [c_custkey#0L]
+Arguments: HashedRelationBroadcastMode(List(input[0, bigint, true]),false), [plan_id=1097]
+
+(6) BatchScan local.tpch.orders
+Output [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+local.tpch.orders (branch=null) [filters=o_orderdate IS NOT NULL, o_orderdate < 9204, o_custkey IS NOT NULL, o_orderkey IS NOT NULL, groupedBy=]
+
+(7) ColumnarToRow
+Input [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+
+(8) Filter
+Input [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+Condition : (((o_orderdate#20 < 1995-03-15) AND isnotnull(o_custkey#17L)) AND isnotnull(o_orderkey#16L))
+
+(9) BroadcastHashJoin [codegen id : 3]
+Left keys [1]: [c_custkey#0L]
+Right keys [1]: [o_custkey#17L]
+Join type: Inner
+Join condition: None
+
+(10) Project [codegen id : 3]
+Output [3]: [o_orderkey#16L, o_orderdate#20, o_shippriority#23]
+Input [5]: [c_custkey#0L, o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+
+(11) BatchScan local.tpch.lineitem
+Output [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_shipdate > 9204, l_orderkey IS NOT NULL, groupedBy=]
+
+(12) ColumnarToRow [codegen id : 2]
+Input [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+
+(13) Filter [codegen id : 2]
+Input [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+Condition : ((l_shipdate#44 > 1995-03-15) AND isnotnull(l_orderkey#34L))
+
+(14) Project [codegen id : 2]
+Output [3]: [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Input [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+
+(15) BroadcastExchange
+Input [3]: [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Arguments: HashedRelationBroadcastMode(List(input[0, bigint, true]),false), [plan_id=1109]
+
+(16) BroadcastHashJoin [codegen id : 3]
+Left keys [1]: [o_orderkey#16L]
+Right keys [1]: [l_orderkey#34L]
+Join type: Inner
+Join condition: None
+
+(17) Project [codegen id : 3]
+Output [5]: [o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Input [6]: [o_orderkey#16L, o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+
+(18) HashAggregate [codegen id : 3]
+Input [5]: [o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Keys [3]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23]
+Functions [1]: [partial_sum((l_extendedprice#39 * (1 - l_discount#40)))]
+Aggregate Attributes [2]: [sum#270, isEmpty#271]
+Results [5]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23, sum#272, isEmpty#273]
+
+(19) Exchange
+Input [5]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23, sum#272, isEmpty#273]
+Arguments: hashpartitioning(l_orderkey#34L, o_orderdate#20, o_shippriority#23, 8), ENSURE_REQUIREMENTS, [plan_id=1115]
+
+(20) HashAggregate [codegen id : 4]
+Input [5]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23, sum#272, isEmpty#273]
+Keys [3]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23]
+Functions [1]: [sum((l_extendedprice#39 * (1 - l_discount#40)))]
+Aggregate Attributes [1]: [sum((l_extendedprice#39 * (1 - l_discount#40)))#255]
+Results [4]: [l_orderkey#34L, sum((l_extendedprice#39 * (1 - l_discount#40)))#255 AS revenue#254, o_orderdate#20, o_shippriority#23]
+
+(21) TakeOrderedAndProject
+Input [4]: [l_orderkey#34L, revenue#254, o_orderdate#20, o_shippriority#23]
+Arguments: 10, [revenue#254 DESC NULLS LAST, o_orderdate#20 ASC NULLS FIRST], [l_orderkey#34L, revenue#254, o_orderdate#20, o_shippriority#23]
+

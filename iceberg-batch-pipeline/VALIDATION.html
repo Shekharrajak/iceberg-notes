@@ -19,13 +19,20 @@
 <li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
 <li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
 <li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
 <li><a href="VALIDATION.html" aria-current="page"><span class="chapter-number"></span>Validation</a></li>
 <li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="VALIDATION.md">Markdown source</a></header><article><h1 id="documentation-validation">Documentation validation</h1>
-<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#formatted-notebook">Formatted notebook</a></li>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#october-2-spark-ui-evidence-addition">October 2 Spark UI evidence addition</a></li>
+<li><a href="#september-30-notebook-validation">September 30 notebook validation</a></li>
+<li><a href="#formatted-notebook">Formatted notebook</a></li>
 <li><a href="#iceberg-scale-evidence-limits">Iceberg scale evidence limits</a></li>
 <li><a href="#arrow-and-hardware-evidence-limits">Arrow and hardware evidence limits</a></li>
 <li><a href="#benchmark-evidence-limits">Benchmark evidence limits</a></li>
 <li><a href="#correctness-audit">Correctness audit</a></li></ul></nav></details>
+<h2 id="october-2-spark-ui-evidence-addition">October 2 Spark UI evidence addition</h2>
+<p>Chapter 19 preserves 14 SQL executions across seven JVM/Comet query-mode pairs, 20 annotated screenshots, saved SQL/physical plans, curated SQL metrics and a timing/provenance manifest. All seven selected pairs have matching schema, row count and result digest. Tables are calculated from five measured samples per engine, not from screenshot durations. Q18 is explicitly marked as an empty-result teaching example. No new benchmark or engine test suite was run while capturing this evidence. The historical validation counts below describe the earlier 18-chapter revision.</p>
+<p>SQL screenshots highlight exchanges, joins/aggregates and row conversions; metric values are unchanged. Q3 DAG and Q9 stage/executor views supplement the operator screenshots. Full configurations and raw event logs are not published. The demo source and build limitations are recorded in chapter 19.</p>
+<h2 id="september-30-notebook-validation">September 30 notebook validation</h2>
 <p>Checked on 2026-09-30 against the local revisions recorded in the source ledger. Engine tests and benchmarks were not run for this notebook. Named tests in the chapters are inspected coverage evidence, not passing results from this session.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
 <th>Check</th>
@@ -119,4 +126,4 @@
 <p>The source/link, Mermaid parity, arithmetic, SVG XML, gallery and desktop/mobile notebook checks passed after regeneration. The presentation check passed for 21 slides and 21 speaker-note blocks, consistent rounded-row arithmetic and saved maintenance medians. Browser inspection visited every slide with images decoded and no script errors; only the pre-existing decorative cover illustration intentionally extends beyond its slide. The corrected runtime, query-shape and benchmark visuals were inspected at presentation size.</p>
 <p>Each speaker-note block has anchor keywords, a short horizontal mental-model chain and a plain-language takeaway. The cue structure is checked automatically; source claims and evidence boundaries still require technical review. These are documentation checks, not engine integration or performance tests.</p>
 <p>See the renderer instructions for reproducible commands. Source references are tied to local checkouts and line numbers; rerun the validator after moving the notebook or updating those checkouts.</p>
-</article><nav class="pager" aria-label="Chapter pagination"><a href="18-iceberg-tests-and-benchmark-evidence.html"><small>Previous</small>Tests and benchmark evidence</a><a href="scripts/README.html"><small>Next</small>Rendering guide</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="19-reading-spark-ui.html"><small>Previous</small>Reading Spark UI: normal plans versus forced shuffle</a><a href="scripts/README.html"><small>Next</small>Rendering guide</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

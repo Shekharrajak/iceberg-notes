@@ -1,0 +1,391 @@
+{
+  "id": 12,
+  "status": "COMPLETED",
+  "description": "Comet native | Q1 | measured 5",
+  "planDescription": "== Physical Plan ==\n* CometColumnarToRow (9)\n+- CometSort (8)\n   +- CometExchange (7)\n      +- CometHashAggregate (6)\n         +- CometExchange (5)\n            +- CometHashAggregate (4)\n               +- CometProject (3)\n                  +- CometFilter (2)\n                     +- CometIcebergNativeScan (1)\n\n\n(1) CometIcebergNativeScan\nOutput [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]\nArguments: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26], /private/tmp/comet-iceberg-demo/warehouse/tpch/lineitem/metadata/v2.metadata.json, local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_shipdate <= 10493, groupedBy=], 81\n\n(2) CometFilter\nInput [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]\nCondition : (l_shipdate#26 <= 1998-09-24)\n\n(3) CometProject\nInput [7]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25, l_shipdate#26]\nArguments: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25], [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25]\n\n(4) CometHashAggregate\nInput [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, l_tax#23, l_returnflag#24, l_linestatus#25]\nKeys [2]: [l_returnflag#24, l_linestatus#25]\nFunctions [8]: [partial_sum(l_quantity#20), partial_sum(l_extendedprice#21), partial_sum((l_extendedprice#21 * (1 - l_discount#22))), partial_sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23))), partial_avg(l_quantity#20), partial_avg(l_extendedprice#21), partial_avg(l_discount#22), partial_count(1)]\n\n(5) CometExchange\nInput [17]: [l_returnflag#24, l_linestatus#25, sum#479, isEmpty#480, sum#481, isEmpty#482, sum#483, isEmpty#484, sum#485, isEmpty#486, sum#487, count#488L, sum#489, count#490L, sum#491, count#492L, count#493L]\nArguments: hashpartitioning(l_returnflag#24, l_linestatus#25, 8), ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=513]\n\n(6) CometHashAggregate\nInput [17]: [l_returnflag#24, l_linestatus#25, sum#479, isEmpty#480, sum#481, isEmpty#482, sum#483, isEmpty#484, sum#485, isEmpty#486, sum#487, count#488L, sum#489, count#490L, sum#491, count#492L, count#493L]\nKeys [2]: [l_returnflag#24, l_linestatus#25]\nFunctions [8]: [sum(l_quantity#20), sum(l_extendedprice#21), sum((l_extendedprice#21 * (1 - l_discount#22))), sum(((l_extendedprice#21 * (1 - l_discount#22)) * (1 + l_tax#23))), avg(l_quantity#20), avg(l_extendedprice#21), avg(l_discount#22), count(1)]\n\n(7) CometExchange\nInput [10]: [l_returnflag#24, l_linestatus#25, sum_qty#431, sum_base_price#432, sum_disc_price#433, sum_charge#434, avg_qty#435, avg_price#436, avg_disc#437, count_order#438L]\nArguments: rangepartitioning(l_returnflag#24 ASC NULLS FIRST, l_linestatus#25 ASC NULLS FIRST, 8), ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=515]\n\n(8) CometSort\nInput [10]: [l_returnflag#24, l_linestatus#25, sum_qty#431, sum_base_price#432, sum_disc_price#433, sum_charge#434, avg_qty#435, avg_price#436, avg_disc#437, count_order#438L]\nArguments: [l_returnflag#24, l_linestatus#25, sum_qty#431, sum_base_price#432, sum_disc_price#433, sum_charge#434, avg_qty#435, avg_price#436, avg_disc#437, count_order#438L], [l_returnflag#24 ASC NULLS FIRST, l_linestatus#25 ASC NULLS FIRST]\n\n(9) CometColumnarToRow [codegen id : 1]\nInput [10]: [l_returnflag#24, l_linestatus#25, sum_qty#431, sum_base_price#432, sum_disc_price#433, sum_charge#434, avg_qty#435, avg_price#436, avg_disc#437, count_order#438L]\n\n",
+  "submissionTime": "2026-10-02T15:48:28.428GMT",
+  "duration": 119,
+  "runningJobIds": [],
+  "successJobIds": [
+    10,
+    11
+  ],
+  "failedJobIds": [],
+  "nodes": [
+    {
+      "nodeId": 9,
+      "nodeName": "CometIcebergNativeScan",
+      "metrics": [
+        {
+          "name": "skippedDeleteFiles",
+          "value": "1"
+        },
+        {
+          "name": "number of bytes scanned",
+          "value": "total (min, med, max (stageId: taskId))\n2.4 MiB (29.6 KiB, 61.7 KiB, 67.0 KiB (stage 25.0: task 327))"
+        },
+        {
+          "name": "skippedDataFiles",
+          "value": "2"
+        },
+        {
+          "name": "totalDataManifest",
+          "value": "1"
+        },
+        {
+          "name": "totalPlanningDuration",
+          "value": "5 ms"
+        },
+        {
+          "name": "number of output rows",
+          "value": "59,068"
+        },
+        {
+          "name": "totalDataFileSize",
+          "value": "1920.9 KiB"
+        },
+        {
+          "name": "indexedDeleteFiles",
+          "value": "80"
+        },
+        {
+          "name": "number of file splits processed",
+          "value": "81"
+        },
+        {
+          "name": "scannedDeleteManifests",
+          "value": "1"
+        },
+        {
+          "name": "positionalDeleteFiles",
+          "value": "80"
+        },
+        {
+          "name": "resultDeleteFiles",
+          "value": "80"
+        },
+        {
+          "name": "totalDeleteFileSize",
+          "value": "137.7 KiB"
+        },
+        {
+          "name": "scannedDataManifests",
+          "value": "1"
+        },
+        {
+          "name": "skippedDeleteManifests",
+          "value": "0"
+        },
+        {
+          "name": "totalDeleteManifests",
+          "value": "1"
+        },
+        {
+          "name": "equalityDeleteFiles",
+          "value": "0"
+        },
+        {
+          "name": "scan time",
+          "value": "total (min, med, max (stageId: taskId))\n33 ms (0 ms, 0 ms, 1 ms (stage 25.0: task 323))"
+        },
+        {
+          "name": "resultDataFiles",
+          "value": "81"
+        },
+        {
+          "name": "skippedDataManifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 8,
+      "nodeName": "CometFilter",
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,068"
+        },
+        {
+          "name": "total time (in ms) spent in this operator",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 319))"
+        }
+      ]
+    },
+    {
+      "nodeId": 7,
+      "nodeName": "CometProject",
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,068"
+        },
+        {
+          "name": "total time (in ms) spent in this operator",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 313))"
+        }
+      ]
+    },
+    {
+      "nodeId": 6,
+      "nodeName": "CometHashAggregate",
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "91"
+        },
+        {
+          "name": "total spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 25.0: task 309))"
+        },
+        {
+          "name": "total time (in ms) spent in this operator",
+          "value": "total (min, med, max (stageId: taskId))\n5 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 337))"
+        }
+      ]
+    },
+    {
+      "nodeId": 5,
+      "nodeName": "CometExchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "91"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n1 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 337))"
+        },
+        {
+          "name": "number of input batches",
+          "value": "41"
+        },
+        {
+          "name": "records read",
+          "value": "182"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n174.3 KiB (0.0 B, 1951.0 B, 28.7 KiB (stage 28.0: task 360))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 28.0: task 361))"
+        },
+        {
+          "name": "repartition time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 337))"
+        },
+        {
+          "name": "decoding and decompression time",
+          "value": "total (min, med, max (stageId: taskId))\n17 ms (0 ms, 0 ms, 3 ms (stage 28.0: task 358))"
+        },
+        {
+          "name": "memory spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 25.0: task 309))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "182"
+        },
+        {
+          "name": "disk spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 25.0: task 309))"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n676.0 KiB (16.4 KiB, 16.5 KiB, 16.6 KiB (stage 25.0: task 308))"
+        },
+        {
+          "name": "native shuffle writer time",
+          "value": "total (min, med, max (stageId: taskId))\n50 ms (0 ms, 0 ms, 7 ms (stage 28.0: task 358))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "encoding and compression time",
+          "value": "total (min, med, max (stageId: taskId))\n1 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 337))"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n87.1 KiB (980.0 B, 1966.0 B, 3.8 KiB (stage 25.0: task 308))"
+        },
+        {
+          "name": "partition interleaving time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 25.0: task 337))"
+        }
+      ]
+    },
+    {
+      "nodeId": 4,
+      "nodeName": "CometHashAggregate",
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "8"
+        },
+        {
+          "name": "total spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 28.0: task 354))"
+        },
+        {
+          "name": "total time (in ms) spent in this operator",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 26.0: task 350))"
+        }
+      ]
+    },
+    {
+      "nodeId": 3,
+      "nodeName": "CometExchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "4"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 28.0: task 359))"
+        },
+        {
+          "name": "number of input batches",
+          "value": "4"
+        },
+        {
+          "name": "records read",
+          "value": "4"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n3.3 KiB (0.0 B, 847.0 B, 1698.0 B (stage 29.0: task 365))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 29.0: task 363))"
+        },
+        {
+          "name": "repartition time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 28.0: task 359))"
+        },
+        {
+          "name": "decoding and decompression time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 29.0: task 365))"
+        },
+        {
+          "name": "memory spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 28.0: task 354))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "4"
+        },
+        {
+          "name": "disk spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 28.0: task 354))"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n64.7 KiB (0.0 B, 16.2 KiB, 16.2 KiB (stage 28.0: task 361))"
+        },
+        {
+          "name": "native shuffle writer time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 29.0: task 365))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "4"
+        },
+        {
+          "name": "encoding and compression time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 28.0: task 359))"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n3.3 KiB (0.0 B, 846.0 B, 852.0 B (stage 28.0: task 359))"
+        },
+        {
+          "name": "partition interleaving time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 28.0: task 359))"
+        }
+      ]
+    },
+    {
+      "nodeId": 2,
+      "nodeName": "CometSort",
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "4"
+        },
+        {
+          "name": "total time (in ms) spent in this operator",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 29.0: task 365))"
+        },
+        {
+          "name": "total spilled bytes",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 29.0: task 362))"
+        }
+      ]
+    },
+    {
+      "nodeId": 1,
+      "nodeName": "CometColumnarToRow",
+      "wholeStageCodegenId": 1,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "4"
+        },
+        {
+          "name": "number of input batches",
+          "value": "3"
+        }
+      ]
+    },
+    {
+      "nodeId": 0,
+      "nodeName": "WholeStageCodegen (1)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 29.0: task 362))"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromId": 2,
+      "toId": 1
+    },
+    {
+      "fromId": 3,
+      "toId": 2
+    },
+    {
+      "fromId": 4,
+      "toId": 3
+    },
+    {
+      "fromId": 5,
+      "toId": 4
+    },
+    {
+      "fromId": 6,
+      "toId": 5
+    },
+    {
+      "fromId": 7,
+      "toId": 6
+    },
+    {
+      "fromId": 8,
+      "toId": 7
+    },
+    {
+      "fromId": 9,
+      "toId": 8
+    }
+  ]
+}

@@ -1,0 +1,1947 @@
+{
+  "id": 12,
+  "status": "COMPLETED",
+  "description": "JVM baseline | forced shuffle-join | Q9 | measured 5",
+  "planDescription": "== Physical Plan ==\n* Sort (54)\n+- Exchange (53)\n   +- * HashAggregate (52)\n      +- Exchange (51)\n         +- * HashAggregate (50)\n            +- * Project (49)\n               +- * SortMergeJoin Inner (48)\n                  :- * Sort (42)\n                  :  +- Exchange (41)\n                  :     +- * Project (40)\n                  :        +- * SortMergeJoin Inner (39)\n                  :           :- * Sort (33)\n                  :           :  +- Exchange (32)\n                  :           :     +- * Project (31)\n                  :           :        +- * SortMergeJoin Inner (30)\n                  :           :           :- * Sort (24)\n                  :           :           :  +- Exchange (23)\n                  :           :           :     +- * Project (22)\n                  :           :           :        +- * SortMergeJoin Inner (21)\n                  :           :           :           :- * Sort (15)\n                  :           :           :           :  +- Exchange (14)\n                  :           :           :           :     +- * Project (13)\n                  :           :           :           :        +- * SortMergeJoin Inner (12)\n                  :           :           :           :           :- * Sort (6)\n                  :           :           :           :           :  +- Exchange (5)\n                  :           :           :           :           :     +- * Project (4)\n                  :           :           :           :           :        +- * Filter (3)\n                  :           :           :           :           :           +- * ColumnarToRow (2)\n                  :           :           :           :           :              +- BatchScan local.tpch.part (1)\n                  :           :           :           :           +- * Sort (11)\n                  :           :           :           :              +- Exchange (10)\n                  :           :           :           :                 +- * Filter (9)\n                  :           :           :           :                    +- * ColumnarToRow (8)\n                  :           :           :           :                       +- BatchScan local.tpch.lineitem (7)\n                  :           :           :           +- * Sort (20)\n                  :           :           :              +- Exchange (19)\n                  :           :           :                 +- * Filter (18)\n                  :           :           :                    +- * ColumnarToRow (17)\n                  :           :           :                       +- BatchScan local.tpch.supplier (16)\n                  :           :           +- * Sort (29)\n                  :           :              +- Exchange (28)\n                  :           :                 +- * Filter (27)\n                  :           :                    +- * ColumnarToRow (26)\n                  :           :                       +- BatchScan local.tpch.partsupp (25)\n                  :           +- * Sort (38)\n                  :              +- Exchange (37)\n                  :                 +- * Filter (36)\n                  :                    +- * ColumnarToRow (35)\n                  :                       +- BatchScan local.tpch.orders (34)\n                  +- * Sort (47)\n                     +- Exchange (46)\n                        +- * Filter (45)\n                           +- * ColumnarToRow (44)\n                              +- BatchScan local.tpch.nation (43)\n\n\n(1) BatchScan local.tpch.part\nOutput [2]: [p_partkey#74L, p_name#75]\nlocal.tpch.part (branch=null) [filters=p_name IS NOT NULL, p_partkey IS NOT NULL, groupedBy=]\n\n(2) ColumnarToRow [codegen id : 1]\nInput [2]: [p_partkey#74L, p_name#75]\n\n(3) Filter [codegen id : 1]\nInput [2]: [p_partkey#74L, p_name#75]\nCondition : ((isnotnull(p_name#75) AND Contains(p_name#75, moccasin)) AND isnotnull(p_partkey#74L))\n\n(4) Project [codegen id : 1]\nOutput [1]: [p_partkey#74L]\nInput [2]: [p_partkey#74L, p_name#75]\n\n(5) Exchange\nInput [1]: [p_partkey#74L]\nArguments: hashpartitioning(p_partkey#74L, 8), ENSURE_REQUIREMENTS, [plan_id=2436]\n\n(6) Sort [codegen id : 2]\nInput [1]: [p_partkey#74L]\nArguments: [p_partkey#74L ASC NULLS FIRST], false, 0\n\n(7) BatchScan local.tpch.lineitem\nOutput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nlocal.tpch.lineitem (branch=null) [filters=l_partkey IS NOT NULL, l_suppkey IS NOT NULL, l_orderkey IS NOT NULL, groupedBy=]\n\n(8) ColumnarToRow [codegen id : 3]\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\n\n(9) Filter [codegen id : 3]\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nCondition : ((isnotnull(l_partkey#17L) AND isnotnull(l_suppkey#18L)) AND isnotnull(l_orderkey#16L))\n\n(10) Exchange\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nArguments: hashpartitioning(l_partkey#17L, 8), ENSURE_REQUIREMENTS, [plan_id=2445]\n\n(11) Sort [codegen id : 4]\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nArguments: [l_partkey#17L ASC NULLS FIRST], false, 0\n\n(12) SortMergeJoin [codegen id : 5]\nLeft keys [1]: [p_partkey#74L]\nRight keys [1]: [l_partkey#17L]\nJoin type: Inner\nJoin condition: None\n\n(13) Project [codegen id : 5]\nOutput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nInput [7]: [p_partkey#74L, l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\n\n(14) Exchange\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nArguments: hashpartitioning(l_suppkey#18L, 8), ENSURE_REQUIREMENTS, [plan_id=2453]\n\n(15) Sort [codegen id : 6]\nInput [6]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22]\nArguments: [l_suppkey#18L ASC NULLS FIRST], false, 0\n\n(16) BatchScan local.tpch.supplier\nOutput [2]: [s_suppkey#102L, s_nationkey#105L]\nlocal.tpch.supplier (branch=null) [filters=s_suppkey IS NOT NULL, s_nationkey IS NOT NULL, groupedBy=]\n\n(17) ColumnarToRow [codegen id : 7]\nInput [2]: [s_suppkey#102L, s_nationkey#105L]\n\n(18) Filter [codegen id : 7]\nInput [2]: [s_suppkey#102L, s_nationkey#105L]\nCondition : (isnotnull(s_suppkey#102L) AND isnotnull(s_nationkey#105L))\n\n(19) Exchange\nInput [2]: [s_suppkey#102L, s_nationkey#105L]\nArguments: hashpartitioning(s_suppkey#102L, 8), ENSURE_REQUIREMENTS, [plan_id=2462]\n\n(20) Sort [codegen id : 8]\nInput [2]: [s_suppkey#102L, s_nationkey#105L]\nArguments: [s_suppkey#102L ASC NULLS FIRST], false, 0\n\n(21) SortMergeJoin [codegen id : 9]\nLeft keys [1]: [l_suppkey#18L]\nRight keys [1]: [s_suppkey#102L]\nJoin type: Inner\nJoin condition: None\n\n(22) Project [codegen id : 9]\nOutput [7]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L]\nInput [8]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22, s_suppkey#102L, s_nationkey#105L]\n\n(23) Exchange\nInput [7]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L]\nArguments: hashpartitioning(l_suppkey#18L, l_partkey#17L, 8), ENSURE_REQUIREMENTS, [plan_id=2470]\n\n(24) Sort [codegen id : 10]\nInput [7]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L]\nArguments: [l_suppkey#18L ASC NULLS FIRST, l_partkey#17L ASC NULLS FIRST], false, 0\n\n(25) BatchScan local.tpch.partsupp\nOutput [3]: [ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\nlocal.tpch.partsupp (branch=null) [filters=ps_suppkey IS NOT NULL, ps_partkey IS NOT NULL, groupedBy=]\n\n(26) ColumnarToRow [codegen id : 11]\nInput [3]: [ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\n\n(27) Filter [codegen id : 11]\nInput [3]: [ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\nCondition : (isnotnull(ps_suppkey#93L) AND isnotnull(ps_partkey#92L))\n\n(28) Exchange\nInput [3]: [ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\nArguments: hashpartitioning(ps_suppkey#93L, ps_partkey#92L, 8), ENSURE_REQUIREMENTS, [plan_id=2479]\n\n(29) Sort [codegen id : 12]\nInput [3]: [ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\nArguments: [ps_suppkey#93L ASC NULLS FIRST, ps_partkey#92L ASC NULLS FIRST], false, 0\n\n(30) SortMergeJoin [codegen id : 13]\nLeft keys [2]: [l_suppkey#18L, l_partkey#17L]\nRight keys [2]: [ps_suppkey#93L, ps_partkey#92L]\nJoin type: Inner\nJoin condition: None\n\n(31) Project [codegen id : 13]\nOutput [6]: [l_orderkey#16L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95]\nInput [10]: [l_orderkey#16L, l_partkey#17L, l_suppkey#18L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_partkey#92L, ps_suppkey#93L, ps_supplycost#95]\n\n(32) Exchange\nInput [6]: [l_orderkey#16L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95]\nArguments: hashpartitioning(l_orderkey#16L, 8), ENSURE_REQUIREMENTS, [plan_id=2487]\n\n(33) Sort [codegen id : 14]\nInput [6]: [l_orderkey#16L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95]\nArguments: [l_orderkey#16L ASC NULLS FIRST], false, 0\n\n(34) BatchScan local.tpch.orders\nOutput [2]: [o_orderkey#56L, o_orderdate#60]\nlocal.tpch.orders (branch=null) [filters=o_orderkey IS NOT NULL, groupedBy=]\n\n(35) ColumnarToRow [codegen id : 15]\nInput [2]: [o_orderkey#56L, o_orderdate#60]\n\n(36) Filter [codegen id : 15]\nInput [2]: [o_orderkey#56L, o_orderdate#60]\nCondition : isnotnull(o_orderkey#56L)\n\n(37) Exchange\nInput [2]: [o_orderkey#56L, o_orderdate#60]\nArguments: hashpartitioning(o_orderkey#56L, 8), ENSURE_REQUIREMENTS, [plan_id=2496]\n\n(38) Sort [codegen id : 16]\nInput [2]: [o_orderkey#56L, o_orderdate#60]\nArguments: [o_orderkey#56L ASC NULLS FIRST], false, 0\n\n(39) SortMergeJoin [codegen id : 17]\nLeft keys [1]: [l_orderkey#16L]\nRight keys [1]: [o_orderkey#56L]\nJoin type: Inner\nJoin condition: None\n\n(40) Project [codegen id : 17]\nOutput [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95, o_orderdate#60]\nInput [8]: [l_orderkey#16L, l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95, o_orderkey#56L, o_orderdate#60]\n\n(41) Exchange\nInput [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95, o_orderdate#60]\nArguments: hashpartitioning(s_nationkey#105L, 8), ENSURE_REQUIREMENTS, [plan_id=2504]\n\n(42) Sort [codegen id : 18]\nInput [6]: [l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95, o_orderdate#60]\nArguments: [s_nationkey#105L ASC NULLS FIRST], false, 0\n\n(43) BatchScan local.tpch.nation\nOutput [2]: [n_nationkey#48L, n_name#49]\nlocal.tpch.nation (branch=null) [filters=n_nationkey IS NOT NULL, groupedBy=]\n\n(44) ColumnarToRow [codegen id : 19]\nInput [2]: [n_nationkey#48L, n_name#49]\n\n(45) Filter [codegen id : 19]\nInput [2]: [n_nationkey#48L, n_name#49]\nCondition : isnotnull(n_nationkey#48L)\n\n(46) Exchange\nInput [2]: [n_nationkey#48L, n_name#49]\nArguments: hashpartitioning(n_nationkey#48L, 8), ENSURE_REQUIREMENTS, [plan_id=2513]\n\n(47) Sort [codegen id : 20]\nInput [2]: [n_nationkey#48L, n_name#49]\nArguments: [n_nationkey#48L ASC NULLS FIRST], false, 0\n\n(48) SortMergeJoin [codegen id : 21]\nLeft keys [1]: [s_nationkey#105L]\nRight keys [1]: [n_nationkey#48L]\nJoin type: Inner\nJoin condition: None\n\n(49) Project [codegen id : 21]\nOutput [3]: [n_name#49 AS nation#291, year(o_orderdate#60) AS o_year#292, ((l_extendedprice#21 * (1 - l_discount#22)) - (ps_supplycost#95 * l_quantity#20)) AS amount#293]\nInput [8]: [l_quantity#20, l_extendedprice#21, l_discount#22, s_nationkey#105L, ps_supplycost#95, o_orderdate#60, n_nationkey#48L, n_name#49]\n\n(50) HashAggregate [codegen id : 21]\nInput [3]: [nation#291, o_year#292, amount#293]\nKeys [2]: [nation#291, o_year#292]\nFunctions [1]: [partial_sum(amount#293)]\nAggregate Attributes [2]: [sum#316, isEmpty#317]\nResults [4]: [nation#291, o_year#292, sum#318, isEmpty#319]\n\n(51) Exchange\nInput [4]: [nation#291, o_year#292, sum#318, isEmpty#319]\nArguments: hashpartitioning(nation#291, o_year#292, 8), ENSURE_REQUIREMENTS, [plan_id=2522]\n\n(52) HashAggregate [codegen id : 22]\nInput [4]: [nation#291, o_year#292, sum#318, isEmpty#319]\nKeys [2]: [nation#291, o_year#292]\nFunctions [1]: [sum(amount#293)]\nAggregate Attributes [1]: [sum(amount#293)#295]\nResults [3]: [nation#291, o_year#292, sum(amount#293)#295 AS sum_profit#294]\n\n(53) Exchange\nInput [3]: [nation#291, o_year#292, sum_profit#294]\nArguments: rangepartitioning(nation#291 ASC NULLS FIRST, o_year#292 DESC NULLS LAST, 8), ENSURE_REQUIREMENTS, [plan_id=2526]\n\n(54) Sort [codegen id : 23]\nInput [3]: [nation#291, o_year#292, sum_profit#294]\nArguments: [nation#291 ASC NULLS FIRST, o_year#292 DESC NULLS LAST], true, 0\n\n",
+  "submissionTime": "2026-10-02T15:49:08.388GMT",
+  "duration": 466,
+  "runningJobIds": [],
+  "successJobIds": [
+    10,
+    11
+  ],
+  "failedJobIds": [],
+  "nodes": [
+    {
+      "nodeId": 76,
+      "nodeName": "BatchScan local.tpch.nation",
+      "metrics": [
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "1"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "2661"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "1"
+        },
+        {
+          "name": "number of output rows",
+          "value": "25"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 75,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 19,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "25"
+        },
+        {
+          "name": "number of input batches",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "nodeId": 74,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 19,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "25"
+        }
+      ]
+    },
+    {
+      "nodeId": 73,
+      "nodeName": "WholeStageCodegen (19)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "5 ms"
+        }
+      ]
+    },
+    {
+      "nodeId": 72,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "25"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "1 ms"
+        },
+        {
+          "name": "records read",
+          "value": "25"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n986.0 B (91.0 B, 125.0 B, 187.0 B (stage 135.0: task 848))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 135.0: task 844))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "8"
+        },
+        {
+          "name": "data size",
+          "value": "848.0 B"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "986.0 B"
+        }
+      ]
+    },
+    {
+      "nodeId": 71,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 20,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 135.0: task 844))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 135.0: task 844))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 135.0: task 844))"
+        }
+      ]
+    },
+    {
+      "nodeId": 70,
+      "nodeName": "WholeStageCodegen (20)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n31 ms (2 ms, 4 ms, 6 ms (stage 135.0: task 848))"
+        }
+      ]
+    },
+    {
+      "nodeId": 69,
+      "nodeName": "BatchScan local.tpch.orders",
+      "metrics": [
+        {
+          "name": "number of row deletes applied",
+          "value": "150"
+        },
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "3"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "698862"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "80"
+        },
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "115662"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "80"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 68,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 15,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        },
+        {
+          "name": "number of input batches",
+          "value": "80"
+        }
+      ]
+    },
+    {
+      "nodeId": 67,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 15,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        }
+      ]
+    },
+    {
+      "nodeId": 66,
+      "nodeName": "WholeStageCodegen (15)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n888 ms (13 ms, 25 ms, 28 ms (stage 131.0: task 731))"
+        }
+      ]
+    },
+    {
+      "nodeId": 65,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "14,850"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n81 ms (1 ms, 2 ms, 3 ms (stage 131.0: task 731))"
+        },
+        {
+          "name": "records read",
+          "value": "14,850"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n156.9 KiB (19.1 KiB, 19.6 KiB, 20.0 KiB (stage 134.0: task 838))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 134.0: task 838))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "296"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n348.0 KiB (4.9 KiB, 9.0 KiB, 13.9 KiB (stage 131.0: task 733))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n156.9 KiB (2.4 KiB, 4.0 KiB, 6.0 KiB (stage 131.0: task 733))"
+        }
+      ]
+    },
+    {
+      "nodeId": 64,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 16,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 134.0: task 838))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 134.0: task 838))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 134.0: task 838))"
+        }
+      ]
+    },
+    {
+      "nodeId": 63,
+      "nodeName": "WholeStageCodegen (16)",
+      "metrics": []
+    },
+    {
+      "nodeId": 62,
+      "nodeName": "BatchScan local.tpch.partsupp",
+      "metrics": [
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "1"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "296344"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "1"
+        },
+        {
+          "name": "number of output rows",
+          "value": "8,000"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 61,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 11,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "8,000"
+        },
+        {
+          "name": "number of input batches",
+          "value": "2"
+        }
+      ]
+    },
+    {
+      "nodeId": 60,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 11,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "8,000"
+        }
+      ]
+    },
+    {
+      "nodeId": 59,
+      "nodeName": "WholeStageCodegen (11)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "4 ms"
+        }
+      ]
+    },
+    {
+      "nodeId": 58,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "8,000"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "2 ms"
+        },
+        {
+          "name": "records read",
+          "value": "8,000"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n109.7 KiB (13.2 KiB, 13.6 KiB, 14.5 KiB (stage 132.0: task 835))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 132.0: task 829))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "8"
+        },
+        {
+          "name": "data size",
+          "value": "250.0 KiB"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "109.7 KiB"
+        }
+      ]
+    },
+    {
+      "nodeId": 57,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 12,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 132.0: task 829))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 132.0: task 829))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 132.0: task 829))"
+        }
+      ]
+    },
+    {
+      "nodeId": 56,
+      "nodeName": "WholeStageCodegen (12)",
+      "metrics": []
+    },
+    {
+      "nodeId": 55,
+      "nodeName": "BatchScan local.tpch.supplier",
+      "metrics": [
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "1"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "8595"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "1"
+        },
+        {
+          "name": "number of output rows",
+          "value": "100"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 54,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 7,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "100"
+        },
+        {
+          "name": "number of input batches",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "nodeId": 53,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 7,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "100"
+        }
+      ]
+    },
+    {
+      "nodeId": 52,
+      "nodeName": "WholeStageCodegen (7)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "1 ms"
+        }
+      ]
+    },
+    {
+      "nodeId": 51,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "100"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "1 ms"
+        },
+        {
+          "name": "records read",
+          "value": "100"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n1659.0 B (123.0 B, 219.0 B, 260.0 B (stage 129.0: task 807))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 129.0: task 806))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "8"
+        },
+        {
+          "name": "data size",
+          "value": "2.3 KiB"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "1659.0 B"
+        }
+      ]
+    },
+    {
+      "nodeId": 50,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 8,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 129.0: task 806))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 129.0: task 806))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 129.0: task 806))"
+        }
+      ]
+    },
+    {
+      "nodeId": 49,
+      "nodeName": "WholeStageCodegen (8)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n13 ms (1 ms, 2 ms, 2 ms (stage 129.0: task 808))"
+        }
+      ]
+    },
+    {
+      "nodeId": 48,
+      "nodeName": "BatchScan local.tpch.lineitem",
+      "metrics": [
+        {
+          "name": "number of row deletes applied",
+          "value": "603"
+        },
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "5"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "1990062"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "83"
+        },
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "142699"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "83"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 47,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 3,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "number of input batches",
+          "value": "83"
+        }
+      ]
+    },
+    {
+      "nodeId": 46,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 3,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        }
+      ]
+    },
+    {
+      "nodeId": 45,
+      "nodeName": "WholeStageCodegen (3)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n1.1 s (13 ms, 26 ms, 28 ms (stage 125.0: task 739))"
+        }
+      ]
+    },
+    {
+      "nodeId": 44,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "59,572"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n94 ms (1 ms, 2 ms, 5 ms (stage 125.0: task 738))"
+        },
+        {
+          "name": "records read",
+          "value": "59,572"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n1580.0 KiB (177.7 KiB, 202.5 KiB, 217.7 KiB (stage 128.0: task 797))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 128.0: task 790))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "328"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n3.2 MiB (52.5 KiB, 81.9 KiB, 89.1 KiB (stage 125.0: task 761))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n1580.0 KiB (26.6 KiB, 39.6 KiB, 42.7 KiB (stage 125.0: task 745))"
+        }
+      ]
+    },
+    {
+      "nodeId": 43,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 4,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 128.0: task 790))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n258.3 MiB (32.3 MiB, 32.3 MiB, 32.5 MiB (stage 128.0: task 797))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 128.0: task 790))"
+        }
+      ]
+    },
+    {
+      "nodeId": 42,
+      "nodeName": "WholeStageCodegen (4)",
+      "metrics": []
+    },
+    {
+      "nodeId": 41,
+      "nodeName": "BatchScan local.tpch.part",
+      "metrics": [
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "1"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "52493"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "1"
+        },
+        {
+          "name": "number of output rows",
+          "value": "2,000"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 40,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 1,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "2,000"
+        },
+        {
+          "name": "number of input batches",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "nodeId": 39,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 1,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "128"
+        }
+      ]
+    },
+    {
+      "nodeId": 38,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 1,
+      "metrics": []
+    },
+    {
+      "nodeId": 37,
+      "nodeName": "WholeStageCodegen (1)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "2 ms"
+        }
+      ]
+    },
+    {
+      "nodeId": 36,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "128"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "1 ms"
+        },
+        {
+          "name": "records read",
+          "value": "128"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n1385.0 B (130.0 B, 183.0 B, 217.0 B (stage 128.0: task 790))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 128.0: task 790))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "8"
+        },
+        {
+          "name": "data size",
+          "value": "2.0 KiB"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "1385.0 B"
+        }
+      ]
+    },
+    {
+      "nodeId": 35,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 2,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 128.0: task 790))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 128.0: task 790))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 128.0: task 790))"
+        }
+      ]
+    },
+    {
+      "nodeId": 34,
+      "nodeName": "WholeStageCodegen (2)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n67 ms (7 ms, 9 ms, 10 ms (stage 128.0: task 794))"
+        }
+      ]
+    },
+    {
+      "nodeId": 33,
+      "nodeName": "SortMergeJoin",
+      "wholeStageCodegenId": 5,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "3,903"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 128.0: task 790))"
+        }
+      ]
+    },
+    {
+      "nodeId": 32,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 5,
+      "metrics": []
+    },
+    {
+      "nodeId": 31,
+      "nodeName": "WholeStageCodegen (5)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n40 ms (4 ms, 5 ms, 6 ms (stage 128.0: task 792))"
+        }
+      ]
+    },
+    {
+      "nodeId": 30,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "3,903"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n19 ms (1 ms, 2 ms, 3 ms (stage 128.0: task 792))"
+        },
+        {
+          "name": "records read",
+          "value": "3,903"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n94.0 KiB (5.4 KiB, 12.6 KiB, 15.2 KiB (stage 129.0: task 812))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 129.0: task 806))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "64"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n213.4 KiB (16.5 KiB, 29.1 KiB, 34.6 KiB (stage 128.0: task 790))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n94.0 KiB (7.6 KiB, 12.8 KiB, 15.0 KiB (stage 128.0: task 790))"
+        }
+      ]
+    },
+    {
+      "nodeId": 29,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 6,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 129.0: task 806))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 129.0: task 806))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 129.0: task 806))"
+        }
+      ]
+    },
+    {
+      "nodeId": 28,
+      "nodeName": "WholeStageCodegen (6)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n17 ms (2 ms, 2 ms, 3 ms (stage 129.0: task 813))"
+        }
+      ]
+    },
+    {
+      "nodeId": 27,
+      "nodeName": "SortMergeJoin",
+      "wholeStageCodegenId": 9,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "3,903"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 129.0: task 806))"
+        }
+      ]
+    },
+    {
+      "nodeId": 26,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 9,
+      "metrics": []
+    },
+    {
+      "nodeId": 25,
+      "nodeName": "WholeStageCodegen (9)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n10 ms (1 ms, 1 ms, 2 ms (stage 129.0: task 812))"
+        }
+      ]
+    },
+    {
+      "nodeId": 24,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "3,903"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n16 ms (1 ms, 2 ms, 2 ms (stage 129.0: task 812))"
+        },
+        {
+          "name": "records read",
+          "value": "3,903"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n95.4 KiB (10.6 KiB, 11.6 KiB, 15.1 KiB (stage 132.0: task 835))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 132.0: task 829))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "64"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n243.9 KiB (12.8 KiB, 33.1 KiB, 40.3 KiB (stage 129.0: task 812))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n95.4 KiB (5.3 KiB, 12.8 KiB, 15.5 KiB (stage 129.0: task 812))"
+        }
+      ]
+    },
+    {
+      "nodeId": 23,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 10,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 132.0: task 829))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 132.0: task 829))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 132.0: task 829))"
+        }
+      ]
+    },
+    {
+      "nodeId": 22,
+      "nodeName": "WholeStageCodegen (10)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n29 ms (3 ms, 4 ms, 5 ms (stage 132.0: task 830))"
+        }
+      ]
+    },
+    {
+      "nodeId": 21,
+      "nodeName": "SortMergeJoin",
+      "wholeStageCodegenId": 13,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "3,903"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 132.0: task 829))"
+        }
+      ]
+    },
+    {
+      "nodeId": 20,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 13,
+      "metrics": []
+    },
+    {
+      "nodeId": 19,
+      "nodeName": "WholeStageCodegen (13)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n20 ms (2 ms, 3 ms, 3 ms (stage 132.0: task 828))"
+        }
+      ]
+    },
+    {
+      "nodeId": 18,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "3,903"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n18 ms (1 ms, 2 ms, 2 ms (stage 132.0: task 831))"
+        },
+        {
+          "name": "records read",
+          "value": "3,903"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n106.7 KiB (12.4 KiB, 13.6 KiB, 13.8 KiB (stage 134.0: task 836))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 134.0: task 838))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "64"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n213.4 KiB (23.5 KiB, 25.9 KiB, 34.3 KiB (stage 132.0: task 835))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n106.7 KiB (12.0 KiB, 13.1 KiB, 16.8 KiB (stage 132.0: task 835))"
+        }
+      ]
+    },
+    {
+      "nodeId": 17,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 14,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 134.0: task 838))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 134.0: task 838))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 134.0: task 838))"
+        }
+      ]
+    },
+    {
+      "nodeId": 16,
+      "nodeName": "WholeStageCodegen (14)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n108 ms (12 ms, 13 ms, 15 ms (stage 134.0: task 841))"
+        }
+      ]
+    },
+    {
+      "nodeId": 15,
+      "nodeName": "SortMergeJoin",
+      "wholeStageCodegenId": 17,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "3,903"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 134.0: task 838))"
+        }
+      ]
+    },
+    {
+      "nodeId": 14,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 17,
+      "metrics": []
+    },
+    {
+      "nodeId": 13,
+      "nodeName": "WholeStageCodegen (17)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n70 ms (7 ms, 9 ms, 10 ms (stage 134.0: task 841))"
+        }
+      ]
+    },
+    {
+      "nodeId": 12,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "3,903"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n56 ms (6 ms, 7 ms, 8 ms (stage 134.0: task 840))"
+        },
+        {
+          "name": "records read",
+          "value": "3,903"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n101.1 KiB (5.9 KiB, 10.3 KiB, 25.5 KiB (stage 135.0: task 850))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 135.0: task 844))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "64"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n213.4 KiB (24.8 KiB, 27.5 KiB, 27.9 KiB (stage 134.0: task 836))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n101.1 KiB (11.8 KiB, 13.0 KiB, 13.2 KiB (stage 134.0: task 836))"
+        }
+      ]
+    },
+    {
+      "nodeId": 11,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 18,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 135.0: task 844))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 135.0: task 844))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 135.0: task 844))"
+        }
+      ]
+    },
+    {
+      "nodeId": 10,
+      "nodeName": "WholeStageCodegen (18)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n41 ms (4 ms, 5 ms, 7 ms (stage 135.0: task 850))"
+        }
+      ]
+    },
+    {
+      "nodeId": 9,
+      "nodeName": "SortMergeJoin",
+      "wholeStageCodegenId": 21,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "3,903"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 135.0: task 844))"
+        }
+      ]
+    },
+    {
+      "nodeId": 8,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 21,
+      "metrics": []
+    },
+    {
+      "nodeId": 7,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 21,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n29 ms (2 ms, 4 ms, 5 ms (stage 135.0: task 848))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n258.0 MiB (32.3 MiB, 32.3 MiB, 32.3 MiB (stage 135.0: task 844))"
+        },
+        {
+          "name": "number of output rows",
+          "value": "174"
+        },
+        {
+          "name": "avg hash probes per key",
+          "value": "(min, med, max (stageId: taskId)):\n(1, 1, 1 (stage 135.0: task 844))"
+        }
+      ]
+    },
+    {
+      "nodeId": 6,
+      "nodeName": "WholeStageCodegen (21)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n46 ms (4 ms, 6 ms, 8 ms (stage 135.0: task 850))"
+        }
+      ]
+    },
+    {
+      "nodeId": 5,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "174"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n26 ms (2 ms, 3 ms, 4 ms (stage 135.0: task 851))"
+        },
+        {
+          "name": "records read",
+          "value": "348"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n17.7 KiB (970.0 B, 1157.0 B, 1359.0 B (stage 148.0: task 862))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 148.0: task 865))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "114"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n11.2 KiB (896.0 B, 1400.0 B, 2.7 KiB (stage 135.0: task 848))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n8.9 KiB (766.0 B, 1166.0 B, 1788.0 B (stage 135.0: task 848))"
+        }
+      ]
+    },
+    {
+      "nodeId": 4,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 22,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 148.0: task 865))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n516.0 MiB (32.3 MiB, 32.3 MiB, 32.3 MiB (stage 148.0: task 865))"
+        },
+        {
+          "name": "number of output rows",
+          "value": "348"
+        },
+        {
+          "name": "avg hash probes per key",
+          "value": "(min, med, max (stageId: taskId)):\n(1, 1, 1 (stage 148.0: task 865))"
+        }
+      ]
+    },
+    {
+      "nodeId": 3,
+      "nodeName": "WholeStageCodegen (22)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n45 ms (1 ms, 4 ms, 5 ms (stage 148.0: task 860))"
+        }
+      ]
+    },
+    {
+      "nodeId": 2,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "174"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n31 ms (3 ms, 3 ms, 4 ms (stage 148.0: task 864))"
+        },
+        {
+          "name": "records read",
+          "value": "174"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n8.9 KiB (1067.0 B, 1132.0 B, 1242.0 B (stage 149.0: task 874))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 149.0: task 868))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "61"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n9.8 KiB (808.0 B, 1320.0 B, 1672.0 B (stage 148.0: task 862))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n8.9 KiB (945.0 B, 1135.0 B, 1407.0 B (stage 148.0: task 862))"
+        }
+      ]
+    },
+    {
+      "nodeId": 1,
+      "nodeName": "Sort",
+      "wholeStageCodegenId": 23,
+      "metrics": [
+        {
+          "name": "sort time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 149.0: task 868))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n256.5 MiB (32.1 MiB, 32.1 MiB, 32.1 MiB (stage 149.0: task 868))"
+        },
+        {
+          "name": "spill size",
+          "value": "total (min, med, max (stageId: taskId))\n0.0 B (0.0 B, 0.0 B, 0.0 B (stage 149.0: task 868))"
+        }
+      ]
+    },
+    {
+      "nodeId": 0,
+      "nodeName": "WholeStageCodegen (23)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n8 ms (1 ms, 1 ms, 1 ms (stage 149.0: task 868))"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "fromId": 2,
+      "toId": 1
+    },
+    {
+      "fromId": 4,
+      "toId": 2
+    },
+    {
+      "fromId": 5,
+      "toId": 4
+    },
+    {
+      "fromId": 7,
+      "toId": 5
+    },
+    {
+      "fromId": 8,
+      "toId": 7
+    },
+    {
+      "fromId": 9,
+      "toId": 8
+    },
+    {
+      "fromId": 11,
+      "toId": 9
+    },
+    {
+      "fromId": 12,
+      "toId": 11
+    },
+    {
+      "fromId": 14,
+      "toId": 12
+    },
+    {
+      "fromId": 15,
+      "toId": 14
+    },
+    {
+      "fromId": 17,
+      "toId": 15
+    },
+    {
+      "fromId": 18,
+      "toId": 17
+    },
+    {
+      "fromId": 20,
+      "toId": 18
+    },
+    {
+      "fromId": 21,
+      "toId": 20
+    },
+    {
+      "fromId": 23,
+      "toId": 21
+    },
+    {
+      "fromId": 24,
+      "toId": 23
+    },
+    {
+      "fromId": 26,
+      "toId": 24
+    },
+    {
+      "fromId": 27,
+      "toId": 26
+    },
+    {
+      "fromId": 29,
+      "toId": 27
+    },
+    {
+      "fromId": 30,
+      "toId": 29
+    },
+    {
+      "fromId": 32,
+      "toId": 30
+    },
+    {
+      "fromId": 33,
+      "toId": 32
+    },
+    {
+      "fromId": 35,
+      "toId": 33
+    },
+    {
+      "fromId": 36,
+      "toId": 35
+    },
+    {
+      "fromId": 38,
+      "toId": 36
+    },
+    {
+      "fromId": 39,
+      "toId": 38
+    },
+    {
+      "fromId": 40,
+      "toId": 39
+    },
+    {
+      "fromId": 41,
+      "toId": 40
+    },
+    {
+      "fromId": 43,
+      "toId": 33
+    },
+    {
+      "fromId": 44,
+      "toId": 43
+    },
+    {
+      "fromId": 46,
+      "toId": 44
+    },
+    {
+      "fromId": 47,
+      "toId": 46
+    },
+    {
+      "fromId": 48,
+      "toId": 47
+    },
+    {
+      "fromId": 50,
+      "toId": 27
+    },
+    {
+      "fromId": 51,
+      "toId": 50
+    },
+    {
+      "fromId": 53,
+      "toId": 51
+    },
+    {
+      "fromId": 54,
+      "toId": 53
+    },
+    {
+      "fromId": 55,
+      "toId": 54
+    },
+    {
+      "fromId": 57,
+      "toId": 21
+    },
+    {
+      "fromId": 58,
+      "toId": 57
+    },
+    {
+      "fromId": 60,
+      "toId": 58
+    },
+    {
+      "fromId": 61,
+      "toId": 60
+    },
+    {
+      "fromId": 62,
+      "toId": 61
+    },
+    {
+      "fromId": 64,
+      "toId": 15
+    },
+    {
+      "fromId": 65,
+      "toId": 64
+    },
+    {
+      "fromId": 67,
+      "toId": 65
+    },
+    {
+      "fromId": 68,
+      "toId": 67
+    },
+    {
+      "fromId": 69,
+      "toId": 68
+    },
+    {
+      "fromId": 71,
+      "toId": 9
+    },
+    {
+      "fromId": 72,
+      "toId": 71
+    },
+    {
+      "fromId": 74,
+      "toId": 72
+    },
+    {
+      "fromId": 75,
+      "toId": 74
+    },
+    {
+      "fromId": 76,
+      "toId": 75
+    }
+  ]
+}

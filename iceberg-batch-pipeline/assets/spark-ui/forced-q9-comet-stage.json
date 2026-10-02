@@ -1,0 +1,12 @@
+{
+  "stageId": 125,
+  "attemptId": 0,
+  "numTasks": 41,
+  "executorRunTime": 323,
+  "jvmGcTime": 0,
+  "inputBytes": 2836562,
+  "shuffleReadBytes": 0,
+  "shuffleWriteBytes": 1645408,
+  "memoryBytesSpilled": 0,
+  "diskBytesSpilled": 0
+}

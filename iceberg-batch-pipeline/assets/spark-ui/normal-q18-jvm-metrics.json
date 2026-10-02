@@ -1,0 +1,872 @@
+{
+  "id": 24,
+  "status": "COMPLETED",
+  "description": "JVM baseline | Q18 | measured 5",
+  "planDescription": "== Physical Plan ==\nTakeOrderedAndProject (30)\n+- * HashAggregate (29)\n   +- Exchange (28)\n      +- * HashAggregate (27)\n         +- * Project (26)\n            +- * BroadcastHashJoin Inner BuildRight (25)\n               :- * Project (18)\n               :  +- * BroadcastHashJoin Inner BuildLeft (17)\n               :     :- BroadcastExchange (4)\n               :     :  +- * Filter (3)\n               :     :     +- * ColumnarToRow (2)\n               :     :        +- BatchScan local.tpch.customer (1)\n               :     +- * BroadcastHashJoin LeftSemi BuildRight (16)\n               :        :- * Filter (7)\n               :        :  +- * ColumnarToRow (6)\n               :        :     +- BatchScan local.tpch.orders (5)\n               :        +- BroadcastExchange (15)\n               :           +- * Project (14)\n               :              +- * Filter (13)\n               :                 +- * HashAggregate (12)\n               :                    +- Exchange (11)\n               :                       +- * HashAggregate (10)\n               :                          +- * ColumnarToRow (9)\n               :                             +- BatchScan local.tpch.lineitem (8)\n               +- BroadcastExchange (24)\n                  +- * BroadcastHashJoin LeftSemi BuildRight (23)\n                     :- * Filter (21)\n                     :  +- * ColumnarToRow (20)\n                     :     +- BatchScan local.tpch.lineitem (19)\n                     +- ReusedExchange (22)\n\n\n(1) BatchScan local.tpch.customer\nOutput [2]: [c_custkey#0L, c_name#1]\nlocal.tpch.customer (branch=null) [filters=c_custkey IS NOT NULL, groupedBy=]\n\n(2) ColumnarToRow [codegen id : 1]\nInput [2]: [c_custkey#0L, c_name#1]\n\n(3) Filter [codegen id : 1]\nInput [2]: [c_custkey#0L, c_name#1]\nCondition : isnotnull(c_custkey#0L)\n\n(4) BroadcastExchange\nInput [2]: [c_custkey#0L, c_name#1]\nArguments: HashedRelationBroadcastMode(List(input[0, bigint, false]),false), [plan_id=3866]\n\n(5) BatchScan local.tpch.orders\nOutput [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]\nlocal.tpch.orders (branch=null) [filters=o_custkey IS NOT NULL, o_orderkey IS NOT NULL, groupedBy=]\n\n(6) ColumnarToRow\nInput [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]\n\n(7) Filter\nInput [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]\nCondition : (isnotnull(o_custkey#57L) AND isnotnull(o_orderkey#56L))\n\n(8) BatchScan local.tpch.lineitem\nOutput [2]: [l_orderkey#1254L, l_quantity#1258]\nlocal.tpch.lineitem (branch=null) [filters=, groupedBy=]\n\n(9) ColumnarToRow [codegen id : 2]\nInput [2]: [l_orderkey#1254L, l_quantity#1258]\n\n(10) HashAggregate [codegen id : 2]\nInput [2]: [l_orderkey#1254L, l_quantity#1258]\nKeys [1]: [l_orderkey#1254L]\nFunctions [1]: [partial_sum(l_quantity#1258)]\nAggregate Attributes [2]: [sum#1292, isEmpty#1293]\nResults [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]\n\n(11) Exchange\nInput [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]\nArguments: hashpartitioning(l_orderkey#1254L, 8), ENSURE_REQUIREMENTS, [plan_id=3875]\n\n(12) HashAggregate [codegen id : 3]\nInput [3]: [l_orderkey#1254L, sum#1294, isEmpty#1295]\nKeys [1]: [l_orderkey#1254L]\nFunctions [1]: [sum(l_quantity#1258)]\nAggregate Attributes [1]: [sum(l_quantity#1258)#1252]\nResults [2]: [l_orderkey#1254L, sum(l_quantity#1258)#1252 AS sum(l_quantity#20)#1253]\n\n(13) Filter [codegen id : 3]\nInput [2]: [l_orderkey#1254L, sum(l_quantity#20)#1253]\nCondition : (isnotnull(sum(l_quantity#20)#1253) AND (sum(l_quantity#20)#1253 > 313.00))\n\n(14) Project [codegen id : 3]\nOutput [1]: [l_orderkey#1254L]\nInput [2]: [l_orderkey#1254L, sum(l_quantity#20)#1253]\n\n(15) BroadcastExchange\nInput [1]: [l_orderkey#1254L]\nArguments: HashedRelationBroadcastMode(List(input[0, bigint, true]),false), [plan_id=3881]\n\n(16) BroadcastHashJoin\nLeft keys [1]: [o_orderkey#56L]\nRight keys [1]: [l_orderkey#1254L]\nJoin type: LeftSemi\nJoin condition: None\n\n(17) BroadcastHashJoin [codegen id : 7]\nLeft keys [1]: [c_custkey#0L]\nRight keys [1]: [o_custkey#57L]\nJoin type: Inner\nJoin condition: None\n\n(18) Project [codegen id : 7]\nOutput [5]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60]\nInput [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]\n\n(19) BatchScan local.tpch.lineitem\nOutput [2]: [l_orderkey#16L, l_quantity#20]\nlocal.tpch.lineitem (branch=null) [filters=l_orderkey IS NOT NULL, groupedBy=]\n\n(20) ColumnarToRow [codegen id : 6]\nInput [2]: [l_orderkey#16L, l_quantity#20]\n\n(21) Filter [codegen id : 6]\nInput [2]: [l_orderkey#16L, l_quantity#20]\nCondition : isnotnull(l_orderkey#16L)\n\n(22) ReusedExchange [Reuses operator id: 15]\nOutput [1]: [l_orderkey#1254L]\n\n(23) BroadcastHashJoin [codegen id : 6]\nLeft keys [1]: [l_orderkey#16L]\nRight keys [1]: [l_orderkey#1254L]\nJoin type: LeftSemi\nJoin condition: None\n\n(24) BroadcastExchange\nInput [2]: [l_orderkey#16L, l_quantity#20]\nArguments: HashedRelationBroadcastMode(List(input[0, bigint, false]),false), [plan_id=3963]\n\n(25) BroadcastHashJoin [codegen id : 7]\nLeft keys [1]: [o_orderkey#56L]\nRight keys [1]: [l_orderkey#16L]\nJoin type: Inner\nJoin condition: None\n\n(26) Project [codegen id : 7]\nOutput [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]\nInput [7]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_orderkey#16L, l_quantity#20]\n\n(27) HashAggregate [codegen id : 7]\nInput [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]\nKeys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]\nFunctions [1]: [partial_sum(l_quantity#20)]\nAggregate Attributes [2]: [sum#1288, isEmpty#1289]\nResults [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]\n\n(28) Exchange\nInput [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]\nArguments: hashpartitioning(c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, 8), ENSURE_REQUIREMENTS, [plan_id=3978]\n\n(29) HashAggregate [codegen id : 8]\nInput [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#1290, isEmpty#1291]\nKeys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]\nFunctions [1]: [sum(l_quantity#20)]\nAggregate Attributes [1]: [sum(l_quantity#20)#1270]\nResults [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity#20)#1270 AS sum(l_quantity)#1271]\n\n(30) TakeOrderedAndProject\nInput [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#1271]\nArguments: 100, [o_totalprice#59 DESC NULLS LAST, o_orderdate#60 ASC NULLS FIRST], [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#1271]\n\n",
+  "submissionTime": "2026-10-02T15:48:20.165GMT",
+  "duration": 479,
+  "runningJobIds": [],
+  "successJobIds": [
+    74,
+    75,
+    76,
+    77
+  ],
+  "failedJobIds": [],
+  "nodes": [
+    {
+      "nodeId": 34,
+      "nodeName": "BatchScan local.tpch.lineitem",
+      "metrics": [
+        {
+          "name": "number of row deletes applied",
+          "value": "603"
+        },
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "2"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "1990062"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "83"
+        },
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "142699"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "83"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 33,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 6,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "number of input batches",
+          "value": "83"
+        }
+      ]
+    },
+    {
+      "nodeId": 32,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 6,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        }
+      ]
+    },
+    {
+      "nodeId": 31,
+      "nodeName": "BroadcastHashJoin",
+      "wholeStageCodegenId": 6,
+      "metrics": []
+    },
+    {
+      "nodeId": 30,
+      "nodeName": "WholeStageCodegen (6)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n996 ms (14 ms, 24 ms, 27 ms (stage 123.0: task 1749))"
+        }
+      ]
+    },
+    {
+      "nodeId": 29,
+      "nodeName": "BroadcastExchange",
+      "metrics": [
+        {
+          "name": "time to broadcast",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to build",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to collect",
+          "value": "357 ms"
+        },
+        {
+          "name": "number of output rows",
+          "value": "0"
+        },
+        {
+          "name": "data size",
+          "value": "0.0 B"
+        }
+      ]
+    },
+    {
+      "nodeId": 28,
+      "nodeName": "BatchScan local.tpch.lineitem",
+      "metrics": [
+        {
+          "name": "number of row deletes applied",
+          "value": "603"
+        },
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "2"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "1990062"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "81"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "83"
+        },
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "142699"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "83"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 27,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 2,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "59,572"
+        },
+        {
+          "name": "number of input batches",
+          "value": "83"
+        }
+      ]
+    },
+    {
+      "nodeId": 26,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 2,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n1.0 s (11 ms, 25 ms, 30 ms (stage 121.0: task 1709))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n1322.3 MiB (32.3 MiB, 32.3 MiB, 32.3 MiB (stage 121.0: task 1684))"
+        },
+        {
+          "name": "number of output rows",
+          "value": "38,140"
+        },
+        {
+          "name": "avg hash probes per key",
+          "value": "(min, med, max (stageId: taskId)):\n(1, 1, 1 (stage 121.0: task 1684))"
+        }
+      ]
+    },
+    {
+      "nodeId": 25,
+      "nodeName": "WholeStageCodegen (2)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n1.1 s (13 ms, 27 ms, 33 ms (stage 121.0: task 1709))"
+        }
+      ]
+    },
+    {
+      "nodeId": 24,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "shuffle records written",
+          "value": "38,140"
+        },
+        {
+          "name": "shuffle write time",
+          "value": "total (min, med, max (stageId: taskId))\n120 ms (1 ms, 2 ms, 8 ms (stage 121.0: task 1707))"
+        },
+        {
+          "name": "records read",
+          "value": "38,140"
+        },
+        {
+          "name": "local bytes read",
+          "value": "total (min, med, max (stageId: taskId))\n539.1 KiB (65.8 KiB, 67.7 KiB, 68.3 KiB (stage 122.0: task 1727))"
+        },
+        {
+          "name": "fetch wait time",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 122.0: task 1729))"
+        },
+        {
+          "name": "local blocks read",
+          "value": "328"
+        },
+        {
+          "name": "data size",
+          "value": "total (min, med, max (stageId: taskId))\n1787.8 KiB (29.3 KiB, 45.0 KiB, 49.6 KiB (stage 121.0: task 1690))"
+        },
+        {
+          "name": "number of partitions",
+          "value": "8"
+        },
+        {
+          "name": "shuffle bytes written",
+          "value": "total (min, med, max (stageId: taskId))\n539.1 KiB (9.6 KiB, 13.4 KiB, 14.6 KiB (stage 121.0: task 1690))"
+        }
+      ]
+    },
+    {
+      "nodeId": 23,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 3,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n53 ms (6 ms, 7 ms, 7 ms (stage 122.0: task 1726))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n258.0 MiB (32.3 MiB, 32.3 MiB, 32.3 MiB (stage 122.0: task 1729))"
+        },
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        },
+        {
+          "name": "avg hash probes per key",
+          "value": "(min, med, max (stageId: taskId)):\n(1, 1, 1 (stage 122.0: task 1729))"
+        }
+      ]
+    },
+    {
+      "nodeId": 22,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 3,
+      "metrics": []
+    },
+    {
+      "nodeId": 21,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 3,
+      "metrics": []
+    },
+    {
+      "nodeId": 20,
+      "nodeName": "WholeStageCodegen (3)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n62 ms (7 ms, 8 ms, 10 ms (stage 122.0: task 1727))"
+        }
+      ]
+    },
+    {
+      "nodeId": 19,
+      "nodeName": "BroadcastExchange",
+      "metrics": [
+        {
+          "name": "time to broadcast",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to build",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to collect",
+          "value": "205 ms"
+        },
+        {
+          "name": "number of output rows",
+          "value": "0"
+        },
+        {
+          "name": "data size",
+          "value": "0.0 B"
+        }
+      ]
+    },
+    {
+      "nodeId": 18,
+      "nodeName": "BatchScan local.tpch.orders",
+      "metrics": [
+        {
+          "name": "number of row deletes applied",
+          "value": "150"
+        },
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "2"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "698862"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "67"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "80"
+        },
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "115662"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "80"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 17,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 7,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        },
+        {
+          "name": "number of input batches",
+          "value": "80"
+        }
+      ]
+    },
+    {
+      "nodeId": 16,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 7,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "14,850"
+        }
+      ]
+    },
+    {
+      "nodeId": 15,
+      "nodeName": "BroadcastHashJoin",
+      "wholeStageCodegenId": 7,
+      "metrics": []
+    },
+    {
+      "nodeId": 14,
+      "nodeName": "BatchScan local.tpch.customer",
+      "metrics": [
+        {
+          "name": "number of skipped delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of skipped data files",
+          "value": "0"
+        },
+        {
+          "name": "total data manifests",
+          "value": "1"
+        },
+        {
+          "name": "total planning duration (ms)",
+          "value": "1"
+        },
+        {
+          "name": "total data file size (bytes)",
+          "value": "86498"
+        },
+        {
+          "name": "number of indexed delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of positional delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of file splits read",
+          "value": "1"
+        },
+        {
+          "name": "number of output rows",
+          "value": "1,500"
+        },
+        {
+          "name": "total delete file size (bytes)",
+          "value": "0"
+        },
+        {
+          "name": "number of scanned data manifests",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped delete manifest",
+          "value": "0"
+        },
+        {
+          "name": "total delete manifests",
+          "value": "0"
+        },
+        {
+          "name": "number of equality delete files",
+          "value": "0"
+        },
+        {
+          "name": "number of result data files",
+          "value": "1"
+        },
+        {
+          "name": "number of skipped data manifests",
+          "value": "0"
+        }
+      ]
+    },
+    {
+      "nodeId": 13,
+      "nodeName": "ColumnarToRow",
+      "wholeStageCodegenId": 1,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "1,500"
+        },
+        {
+          "name": "number of input batches",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "nodeId": 12,
+      "nodeName": "Filter",
+      "wholeStageCodegenId": 1,
+      "metrics": [
+        {
+          "name": "number of output rows",
+          "value": "1,500"
+        }
+      ]
+    },
+    {
+      "nodeId": 11,
+      "nodeName": "WholeStageCodegen (1)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "1 ms"
+        }
+      ]
+    },
+    {
+      "nodeId": 10,
+      "nodeName": "BroadcastExchange",
+      "metrics": [
+        {
+          "name": "time to broadcast",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to build",
+          "value": "0 ms"
+        },
+        {
+          "name": "time to collect",
+          "value": "7 ms"
+        },
+        {
+          "name": "number of output rows",
+          "value": "1,500"
+        },
+        {
+          "name": "data size",
+          "value": "1035.7 KiB"
+        }
+      ]
+    },
+    {
+      "nodeId": 9,
+      "nodeName": "BroadcastHashJoin",
+      "wholeStageCodegenId": 7,
+      "metrics": []
+    },
+    {
+      "nodeId": 8,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 7,
+      "metrics": []
+    },
+    {
+      "nodeId": 7,
+      "nodeName": "BroadcastHashJoin",
+      "wholeStageCodegenId": 7,
+      "metrics": []
+    },
+    {
+      "nodeId": 6,
+      "nodeName": "Project",
+      "wholeStageCodegenId": 7,
+      "metrics": []
+    },
+    {
+      "nodeId": 5,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 7,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n824 ms (11 ms, 24 ms, 27 ms (stage 124.0: task 1778))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n9.3 MiB (256.0 KiB, 256.0 KiB, 256.0 KiB (stage 124.0: task 1775))"
+        }
+      ]
+    },
+    {
+      "nodeId": 4,
+      "nodeName": "WholeStageCodegen (7)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n854 ms (12 ms, 25 ms, 27 ms (stage 124.0: task 1773))"
+        }
+      ]
+    },
+    {
+      "nodeId": 3,
+      "nodeName": "Exchange",
+      "metrics": [
+        {
+          "name": "number of partitions",
+          "value": "8"
+        }
+      ]
+    },
+    {
+      "nodeId": 2,
+      "nodeName": "HashAggregate",
+      "wholeStageCodegenId": 8,
+      "metrics": [
+        {
+          "name": "time in aggregation build",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 125.0: task 1813))"
+        },
+        {
+          "name": "peak memory",
+          "value": "total (min, med, max (stageId: taskId))\n2.0 MiB (256.0 KiB, 256.0 KiB, 256.0 KiB (stage 125.0: task 1813))"
+        }
+      ]
+    },
+    {
+      "nodeId": 1,
+      "nodeName": "WholeStageCodegen (8)",
+      "metrics": [
+        {
+          "name": "duration",
+          "value": "total (min, med, max (stageId: taskId))\n0 ms (0 ms, 0 ms, 0 ms (stage 125.0: task 1813))"
+        }
+      ]
+    },
+    {
+      "nodeId": 0,
+      "nodeName": "TakeOrderedAndProject",
+      "metrics": []
+    }
+  ],
+  "edges": [
+    {
+      "fromId": 2,
+      "toId": 0
+    },
+    {
+      "fromId": 3,
+      "toId": 2
+    },
+    {
+      "fromId": 5,
+      "toId": 3
+    },
+    {
+      "fromId": 6,
+      "toId": 5
+    },
+    {
+      "fromId": 7,
+      "toId": 6
+    },
+    {
+      "fromId": 8,
+      "toId": 7
+    },
+    {
+      "fromId": 9,
+      "toId": 8
+    },
+    {
+      "fromId": 10,
+      "toId": 9
+    },
+    {
+      "fromId": 12,
+      "toId": 10
+    },
+    {
+      "fromId": 13,
+      "toId": 12
+    },
+    {
+      "fromId": 14,
+      "toId": 13
+    },
+    {
+      "fromId": 15,
+      "toId": 9
+    },
+    {
+      "fromId": 16,
+      "toId": 15
+    },
+    {
+      "fromId": 17,
+      "toId": 16
+    },
+    {
+      "fromId": 18,
+      "toId": 17
+    },
+    {
+      "fromId": 19,
+      "toId": 15
+    },
+    {
+      "fromId": 21,
+      "toId": 19
+    },
+    {
+      "fromId": 22,
+      "toId": 21
+    },
+    {
+      "fromId": 23,
+      "toId": 22
+    },
+    {
+      "fromId": 24,
+      "toId": 23
+    },
+    {
+      "fromId": 26,
+      "toId": 24
+    },
+    {
+      "fromId": 27,
+      "toId": 26
+    },
+    {
+      "fromId": 28,
+      "toId": 27
+    },
+    {
+      "fromId": 29,
+      "toId": 7
+    },
+    {
+      "fromId": 31,
+      "toId": 29
+    },
+    {
+      "fromId": 32,
+      "toId": 31
+    },
+    {
+      "fromId": 33,
+      "toId": 32
+    },
+    {
+      "fromId": 34,
+      "toId": 33
+    },
+    {
+      "fromId": 19,
+      "toId": 31
+    }
+  ]
+}

@@ -1,5 +1,13 @@
 # Documentation validation
 
+## October 2 Spark UI evidence addition
+
+Chapter 19 preserves 14 SQL executions across seven JVM/Comet query-mode pairs, 20 annotated screenshots, saved SQL/physical plans, curated SQL metrics and a timing/provenance manifest. All seven selected pairs have matching schema, row count and result digest. Tables are calculated from five measured samples per engine, not from screenshot durations. Q18 is explicitly marked as an empty-result teaching example. No new benchmark or engine test suite was run while capturing this evidence. The historical validation counts below describe the earlier 18-chapter revision.
+
+SQL screenshots highlight exchanges, joins/aggregates and row conversions; metric values are unchanged. Q3 DAG and Q9 stage/executor views supplement the operator screenshots. Full configurations and raw event logs are not published. The demo source and build limitations are recorded in chapter 19.
+
+## September 30 notebook validation
+
 Checked on 2026-09-30 against the local revisions recorded in the source ledger. Engine tests and benchmarks were not run for this notebook. Named tests in the chapters are inspected coverage evidence, not passing results from this session.
 
 | Check | Result |

@@ -1,0 +1,144 @@
+== Physical Plan ==
+* CometColumnarToRow (27)
++- CometTakeOrderedAndProject (26)
+   +- CometHashAggregate (25)
+      +- CometExchange (24)
+         +- CometHashAggregate (23)
+            +- CometProject (22)
+               +- CometBroadcastHashJoin (21)
+                  :- CometProject (15)
+                  :  +- CometBroadcastHashJoin (14)
+                  :     :- CometBroadcastExchange (3)
+                  :     :  +- CometFilter (2)
+                  :     :     +- CometIcebergNativeScan (1)
+                  :     +- CometBroadcastHashJoin (13)
+                  :        :- CometFilter (5)
+                  :        :  +- CometIcebergNativeScan (4)
+                  :        +- CometBroadcastExchange (12)
+                  :           +- CometProject (11)
+                  :              +- CometFilter (10)
+                  :                 +- CometHashAggregate (9)
+                  :                    +- CometExchange (8)
+                  :                       +- CometHashAggregate (7)
+                  :                          +- CometIcebergNativeScan (6)
+                  +- CometBroadcastExchange (20)
+                     +- CometBroadcastHashJoin (19)
+                        :- CometFilter (17)
+                        :  +- CometIcebergNativeScan (16)
+                        +- ReusedExchange (18)
+
+
+(1) CometIcebergNativeScan
+Output [2]: [c_custkey#0L, c_name#1]
+Arguments: [c_custkey#0L, c_name#1], /private/tmp/comet-iceberg-demo/warehouse/tpch/customer/metadata/v1.metadata.json, local.tpch.customer (branch=null) [filters=c_custkey IS NOT NULL, groupedBy=], 1
+
+(2) CometFilter
+Input [2]: [c_custkey#0L, c_name#1]
+Condition : isnotnull(c_custkey#0L)
+
+(3) CometBroadcastExchange
+Input [2]: [c_custkey#0L, c_name#1]
+Arguments: [c_custkey#0L, c_name#1]
+
+(4) CometIcebergNativeScan
+Output [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Arguments: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60], /private/tmp/comet-iceberg-demo/warehouse/tpch/orders/metadata/v2.metadata.json, local.tpch.orders (branch=null) [filters=o_custkey IS NOT NULL, o_orderkey IS NOT NULL, groupedBy=], 80
+
+(5) CometFilter
+Input [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Condition : (isnotnull(o_custkey#57L) AND isnotnull(o_orderkey#56L))
+
+(6) CometIcebergNativeScan
+Output [2]: [l_orderkey#896L, l_quantity#900]
+Arguments: [l_orderkey#896L, l_quantity#900], /private/tmp/comet-iceberg-demo/warehouse/tpch/lineitem/metadata/v2.metadata.json, local.tpch.lineitem (branch=null) [filters=, groupedBy=], 83
+
+(7) CometHashAggregate
+Input [2]: [l_orderkey#896L, l_quantity#900]
+Keys [1]: [l_orderkey#896L]
+Functions [1]: [partial_sum(l_quantity#900)]
+
+(8) CometExchange
+Input [3]: [l_orderkey#896L, sum#936, isEmpty#937]
+Arguments: hashpartitioning(l_orderkey#896L, 8), ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=5163]
+
+(9) CometHashAggregate
+Input [3]: [l_orderkey#896L, sum#936, isEmpty#937]
+Keys [1]: [l_orderkey#896L]
+Functions [1]: [sum(l_quantity#900)]
+
+(10) CometFilter
+Input [2]: [l_orderkey#896L, sum(l_quantity#20)#895]
+Condition : (isnotnull(sum(l_quantity#20)#895) AND (sum(l_quantity#20)#895 > 313.00))
+
+(11) CometProject
+Input [2]: [l_orderkey#896L, sum(l_quantity#20)#895]
+Arguments: [l_orderkey#896L], [l_orderkey#896L]
+
+(12) CometBroadcastExchange
+Input [1]: [l_orderkey#896L]
+Arguments: [l_orderkey#896L]
+
+(13) CometBroadcastHashJoin
+Left output [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Right output [1]: [l_orderkey#896L]
+Arguments: [o_orderkey#56L], [l_orderkey#896L], LeftSemi, BuildRight
+
+(14) CometBroadcastHashJoin
+Left output [2]: [c_custkey#0L, c_name#1]
+Right output [4]: [o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Arguments: [c_custkey#0L], [o_custkey#57L], Inner, BuildLeft
+
+(15) CometProject
+Input [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_custkey#57L, o_totalprice#59, o_orderdate#60]
+Arguments: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60], [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60]
+
+(16) CometIcebergNativeScan
+Output [2]: [l_orderkey#16L, l_quantity#20]
+Arguments: [l_orderkey#16L, l_quantity#20], /private/tmp/comet-iceberg-demo/warehouse/tpch/lineitem/metadata/v2.metadata.json, local.tpch.lineitem (branch=null) [filters=l_orderkey IS NOT NULL, groupedBy=], 83
+
+(17) CometFilter
+Input [2]: [l_orderkey#16L, l_quantity#20]
+Condition : isnotnull(l_orderkey#16L)
+
+(18) ReusedExchange [Reuses operator id: 12]
+Output [1]: [l_orderkey#896L]
+
+(19) CometBroadcastHashJoin
+Left output [2]: [l_orderkey#16L, l_quantity#20]
+Right output [1]: [l_orderkey#896L]
+Arguments: [l_orderkey#16L], [l_orderkey#896L], LeftSemi, BuildRight
+
+(20) CometBroadcastExchange
+Input [2]: [l_orderkey#16L, l_quantity#20]
+Arguments: [l_orderkey#16L, l_quantity#20]
+
+(21) CometBroadcastHashJoin
+Left output [5]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60]
+Right output [2]: [l_orderkey#16L, l_quantity#20]
+Arguments: [o_orderkey#56L], [l_orderkey#16L], Inner, BuildRight
+
+(22) CometProject
+Input [7]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_orderkey#16L, l_quantity#20]
+Arguments: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20], [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]
+
+(23) CometHashAggregate
+Input [6]: [c_custkey#0L, c_name#1, o_orderkey#56L, o_totalprice#59, o_orderdate#60, l_quantity#20]
+Keys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]
+Functions [1]: [partial_sum(l_quantity#20)]
+
+(24) CometExchange
+Input [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#932, isEmpty#933]
+Arguments: hashpartitioning(c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, 8), ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=5256]
+
+(25) CometHashAggregate
+Input [7]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum#932, isEmpty#933]
+Keys [5]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59]
+Functions [1]: [sum(l_quantity#20)]
+
+(26) CometTakeOrderedAndProject
+Input [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#913]
+Arguments: TakeOrderedAndProject(limit=100, orderBy=[o_totalprice#59 DESC NULLS LAST,o_orderdate#60 ASC NULLS FIRST], output=[c_name#1,c_custkey#0L,o_orderkey#56L,o_orderdate#60,o_totalprice#59,sum(l_quantity)#913]), [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#913], 100, 0, [o_totalprice#59 DESC NULLS LAST, o_orderdate#60 ASC NULLS FIRST], [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#913]
+
+(27) CometColumnarToRow [codegen id : 1]
+Input [6]: [c_name#1, c_custkey#0L, o_orderkey#56L, o_orderdate#60, o_totalprice#59, sum(l_quantity)#913]
+

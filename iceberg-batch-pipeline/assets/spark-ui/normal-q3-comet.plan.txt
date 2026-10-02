@@ -1,0 +1,101 @@
+== Physical Plan ==
+* CometColumnarToRow (19)
++- CometTakeOrderedAndProject (18)
+   +- CometHashAggregate (17)
+      +- CometExchange (16)
+         +- CometHashAggregate (15)
+            +- CometProject (14)
+               +- CometBroadcastHashJoin (13)
+                  :- CometProject (8)
+                  :  +- CometBroadcastHashJoin (7)
+                  :     :- CometBroadcastExchange (4)
+                  :     :  +- CometProject (3)
+                  :     :     +- CometFilter (2)
+                  :     :        +- CometIcebergNativeScan (1)
+                  :     +- CometFilter (6)
+                  :        +- CometIcebergNativeScan (5)
+                  +- CometBroadcastExchange (12)
+                     +- CometProject (11)
+                        +- CometFilter (10)
+                           +- CometIcebergNativeScan (9)
+
+
+(1) CometIcebergNativeScan
+Output [2]: [c_custkey#0L, c_mktsegment#6]
+Arguments: [c_custkey#0L, c_mktsegment#6], /private/tmp/comet-iceberg-demo/warehouse/tpch/customer/metadata/v1.metadata.json, local.tpch.customer (branch=null) [filters=c_mktsegment IS NOT NULL, c_mktsegment = 'BUILDING', c_custkey IS NOT NULL, groupedBy=], 1
+
+(2) CometFilter
+Input [2]: [c_custkey#0L, c_mktsegment#6]
+Condition : ((isnotnull(c_mktsegment#6) AND (c_mktsegment#6 = BUILDING)) AND isnotnull(c_custkey#0L))
+
+(3) CometProject
+Input [2]: [c_custkey#0L, c_mktsegment#6]
+Arguments: [c_custkey#0L], [c_custkey#0L]
+
+(4) CometBroadcastExchange
+Input [1]: [c_custkey#0L]
+Arguments: [c_custkey#0L]
+
+(5) CometIcebergNativeScan
+Output [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+Arguments: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23], /private/tmp/comet-iceberg-demo/warehouse/tpch/orders/metadata/v2.metadata.json, local.tpch.orders (branch=null) [filters=o_orderdate IS NOT NULL, o_orderdate < 9204, o_custkey IS NOT NULL, o_orderkey IS NOT NULL, groupedBy=], 39
+
+(6) CometFilter
+Input [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+Condition : (((o_orderdate#20 < 1995-03-15) AND isnotnull(o_custkey#17L)) AND isnotnull(o_orderkey#16L))
+
+(7) CometBroadcastHashJoin
+Left output [1]: [c_custkey#0L]
+Right output [4]: [o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+Arguments: [c_custkey#0L], [o_custkey#17L], Inner, BuildLeft
+
+(8) CometProject
+Input [5]: [c_custkey#0L, o_orderkey#16L, o_custkey#17L, o_orderdate#20, o_shippriority#23]
+Arguments: [o_orderkey#16L, o_orderdate#20, o_shippriority#23], [o_orderkey#16L, o_orderdate#20, o_shippriority#23]
+
+(9) CometIcebergNativeScan
+Output [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+Arguments: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44], /private/tmp/comet-iceberg-demo/warehouse/tpch/lineitem/metadata/v2.metadata.json, local.tpch.lineitem (branch=null) [filters=l_shipdate IS NOT NULL, l_shipdate > 9204, l_orderkey IS NOT NULL, groupedBy=], 45
+
+(10) CometFilter
+Input [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+Condition : ((l_shipdate#44 > 1995-03-15) AND isnotnull(l_orderkey#34L))
+
+(11) CometProject
+Input [4]: [l_orderkey#34L, l_extendedprice#39, l_discount#40, l_shipdate#44]
+Arguments: [l_orderkey#34L, l_extendedprice#39, l_discount#40], [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+
+(12) CometBroadcastExchange
+Input [3]: [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Arguments: [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+
+(13) CometBroadcastHashJoin
+Left output [3]: [o_orderkey#16L, o_orderdate#20, o_shippriority#23]
+Right output [3]: [l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Arguments: [o_orderkey#16L], [l_orderkey#34L], Inner, BuildRight
+
+(14) CometProject
+Input [6]: [o_orderkey#16L, o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Arguments: [o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40], [o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+
+(15) CometHashAggregate
+Input [5]: [o_orderdate#20, o_shippriority#23, l_orderkey#34L, l_extendedprice#39, l_discount#40]
+Keys [3]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23]
+Functions [1]: [partial_sum((l_extendedprice#39 * (1 - l_discount#40)))]
+
+(16) CometExchange
+Input [5]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23, sum#250, isEmpty#251]
+Arguments: hashpartitioning(l_orderkey#34L, o_orderdate#20, o_shippriority#23, 8), ENSURE_REQUIREMENTS, CometNativeShuffle, [plan_id=1549]
+
+(17) CometHashAggregate
+Input [5]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23, sum#250, isEmpty#251]
+Keys [3]: [l_orderkey#34L, o_orderdate#20, o_shippriority#23]
+Functions [1]: [sum((l_extendedprice#39 * (1 - l_discount#40)))]
+
+(18) CometTakeOrderedAndProject
+Input [4]: [l_orderkey#34L, revenue#232, o_orderdate#20, o_shippriority#23]
+Arguments: TakeOrderedAndProject(limit=10, orderBy=[revenue#232 DESC NULLS LAST,o_orderdate#20 ASC NULLS FIRST], output=[l_orderkey#34L,revenue#232,o_orderdate#20,o_shippriority#23]), [l_orderkey#34L, revenue#232, o_orderdate#20, o_shippriority#23], 10, 0, [revenue#232 DESC NULLS LAST, o_orderdate#20 ASC NULLS FIRST], [l_orderkey#34L, revenue#232, o_orderdate#20, o_shippriority#23]
+
+(19) CometColumnarToRow [codegen id : 1]
+Input [4]: [l_orderkey#34L, revenue#232, o_orderdate#20, o_shippriority#23]
+

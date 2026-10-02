@@ -7,7 +7,7 @@
       "title": "Iceberg batch pipeline source notebook",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "f80b1530d3e076f25ab20671bd4161cf2bf2aeee55bc22a182d20a83fb927730"
+      "sha256": "43e4620be32119aaa8c321f0d598960b62d5bb8e3bc60beb73b21e32e3f5b61f"
     },
     {
       "source": "01-system-architecture.md",
@@ -154,12 +154,20 @@
       "sha256": "1a79b43d4004f4f1eea6012ed39e2ba9414d6495d7a794dc5233567784ebca7f"
     },
     {
+      "source": "19-reading-spark-ui.md",
+      "html": "19-reading-spark-ui.html",
+      "title": "Reading Spark UI: normal plans versus forced shuffle",
+      "headings": 22,
+      "diagrams": 0,
+      "sha256": "a6ff1ab2dabfb6fca2aa1d2e41c53fa2b0ecbcdc82a814928669c58db7dae5ca"
+    },
+    {
       "source": "VALIDATION.md",
       "html": "VALIDATION.html",
       "title": "Documentation validation",
-      "headings": 6,
+      "headings": 8,
       "diagrams": 0,
-      "sha256": "9855ccb054918df8b7c3a59f3241e3f2baae7c666be78ade319ef9f2cf19dca6"
+      "sha256": "5e973961f7cdfcee441b68ea57abd931b0ef37841ad44647498b4c717b95bd27"
     },
     {
       "source": "scripts/README.md",
