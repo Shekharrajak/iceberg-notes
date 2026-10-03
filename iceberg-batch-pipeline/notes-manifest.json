@@ -7,7 +7,7 @@
       "title": "Iceberg batch pipeline source notebook",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "43e4620be32119aaa8c321f0d598960b62d5bb8e3bc60beb73b21e32e3f5b61f"
+      "sha256": "0de6305c52ed542e20bbe562aafca4f4284bfefbb26c69e59354b666efc562cb"
     },
     {
       "source": "01-system-architecture.md",
@@ -160,6 +160,14 @@
       "headings": 22,
       "diagrams": 0,
       "sha256": "a6ff1ab2dabfb6fca2aa1d2e41c53fa2b0ecbcdc82a814928669c58db7dae5ca"
+    },
+    {
+      "source": "20-iceberg-spark-ui-metrics.md",
+      "html": "20-iceberg-spark-ui-metrics.html",
+      "title": "Iceberg metrics in Spark UI: planning, execution and commit evidence",
+      "headings": 11,
+      "diagrams": 0,
+      "sha256": "d830127ff7f82486361249cee4648c78da877a34f2e7ff35d03237798f63f9a1"
     },
     {
       "source": "VALIDATION.md",

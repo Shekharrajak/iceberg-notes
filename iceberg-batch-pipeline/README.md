@@ -30,6 +30,7 @@ For browser reading, open the [formatted notebook](index.html). It combines the 
 | [Distributed Iceberg and compaction](17-distributed-iceberg-and-compaction.md) | Remote manifest planning, driver limits, task/group concurrency, JVM/native boundaries, partial progress and concurrent deletes |
 | [Integration tests and benchmark evidence](18-iceberg-tests-and-benchmark-evidence.md) | Exact test assertions, historical XML findings, benchmark timing boundaries, focused commands and missing scale evidence |
 | [Reading Spark UI](19-reading-spark-ui.md) | Normal versus forced shuffle; Q1/Q3/Q9/Q18 plans, timings, annotated screenshots, DAG/stage/executor interpretation and limits |
+| [Iceberg metrics in Spark UI](20-iceberg-spark-ui-metrics.md) | Planning versus runtime counters; exact JVM/Comet scan comparisons; delete semantics; write commit and maintenance evidence; missing-metric troubleshooting |
 | [Source ledger](09-source-ledger.md) | Exact checkouts, source links, tests, limitations, and revalidation procedure |
 
 The existing [earlier mental-model notebook](../distributed-batch-pipeline-mental-model.md) is preserved. Prefer this collection for the qualified implementation details below.

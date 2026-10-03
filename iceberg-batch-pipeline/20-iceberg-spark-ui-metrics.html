@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iceberg metrics in Spark UI: planning, execution and commit evidence | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
+<li><a href="20-iceberg-spark-ui-metrics.html" aria-current="page"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="20-iceberg-spark-ui-metrics.md">Markdown source</a></header><article><h1 id="iceberg-metrics-in-spark-ui-planning-execution-and-commit-evidence">Iceberg metrics in Spark UI: planning, execution and commit evidence</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#tldr">TL;DR</a></li>
+<li><a href="#four-layers-four-measurement-boundaries">Four layers, four measurement boundaries</a></li>
+<li><a href="#metric-dictionary-what-the-labels-actually-mean">Metric dictionary: what the labels actually mean</a></li>
+<li><a href="#q1-exact-jvm-versus-comet-scan-comparison">Q1: exact JVM versus Comet scan comparison</a></li>
+<li><a href="#q3-and-q9-selective-versus-broad-scans">Q3 and Q9: selective versus broad scans</a></li>
+<li><a href="#q18-planned-work-is-not-the-same-as-completed-runtime-work">Q18: planned work is not the same as completed runtime work</a></li>
+<li><a href="#writes-distinguish-task-output-from-committed-state">Writes: distinguish task output from committed state</a></li>
+<li><a href="#maintenance-use-procedure-results-and-beforeafter-state">Maintenance: use procedure results and before/after state</a></li>
+<li><a href="#presenter-walkthrough-and-troubleshooting">Presenter walkthrough and troubleshooting</a></li>
+<li><a href="#validation-source-scope-and-remaining-gaps">Validation, source scope and remaining gaps</a></li></ul></nav></details>
+<p>Source inspected October 3, 2026; observations below come from the saved October 2 demo, not a new benchmark. Read <a href="19-reading-spark-ui.html">chapter 19</a> for timings, query parameters, app/execution IDs, screenshots and run commands.</p>
+<h2 id="tldr">TL;DR</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Best evidence</th>
+<th>What our demo establishes</th>
+</tr>
+</thead><tbody><tr>
+<td>What work did Iceberg select?</td>
+<td>Scan-node planning counters, filters, snapshot and manifest/file metadata</td>
+<td>JVM and Comet select the same file counts in the examples below</td>
+</tr>
+<tr>
+<td>What did the reader actually do?</td>
+<td>Runtime rows, splits, bytes, scan time and deletes-applied counters where supported</td>
+<td>Reader metric sets and filter boundaries differ</td>
+</tr>
+<tr>
+<td>Where did Spark move/process data?</td>
+<td>SQL exchanges/joins, job DAG, stage task metrics</td>
+<td>Local partitioned execution; not multi-machine network performance</td>
+</tr>
+<tr>
+<td>Did files become committed table state?</td>
+<td>Successful commit and snapshot summary, current files metadata</td>
+<td>Read-query screenshots do not establish this</td>
+</tr>
+<tr>
+<td>Did compaction reduce fragmentation?</td>
+<td>Procedure result, before/after file layout, checksum and elapsed time</td>
+<td>Separate maintenance harness records these; do not infer them from Q1/Q3/Q9/Q18</td>
+</tr>
+<tr>
+<td>Did cleanup delete cloud objects faster?</td>
+<td>Procedure results plus storage-side telemetry and measured interval</td>
+<td>Not established by this local-filesystem demo</td>
+</tr>
+</tbody></table></div>
+<p>The talk-ready sentence: <strong>Iceberg counters explain selected work; reader counters explain executed work; Spark stages explain coordination; snapshot metadata proves committed table state.</strong></p>
+<h2 id="four-layers-four-measurement-boundaries">Four layers, four measurement boundaries</h2>
+<pre><code>Planning: snapshot -&gt; manifests -&gt; partition/file pruning -&gt; data tasks + applicable deletes
+Execution: file splits -&gt; reader + deletes + predicates -&gt; rows/batches -&gt; relational operators
+Distribution: exchange writer -&gt; shuffle blocks -&gt; fetch/decode -&gt; receiving tasks
+Write: task files -&gt; commit messages -&gt; driver validation -&gt; snapshot publication</code></pre>
+<p>DataSourceV2 provides the interface for custom scan metrics; it does not automatically manufacture every useful Iceberg metric. Iceberg&#39;s <code>SparkScan.supportedCustomMetrics()</code> declares supported metrics and <code>reportDriverMetrics()</code> converts a <code>ScanReport</code> into driver metrics. Reader tasks supply a different set of runtime counters. Comet forwards planning metrics from the original scan and supplies its own native runtime metrics.</p>
+<p>Source: <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkScan.java#L283">SparkScan.java</a>, <a href="../../../../oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergNativeScanExec.scala#L185">CometIcebergNativeScanExec.scala</a>. The reference Iceberg checkout is <code>5e7169168d</code>; the captured runtime jar is Iceberg 1.8.1. Use saved runtime evidence for exact displayed names/values, not assumptions that the reference checkout is identical to the jar.</p>
+<h2 id="metric-dictionary-what-the-labels-actually-mean">Metric dictionary: what the labels actually mean</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Planning metric key</th>
+<th>Meaning</th>
+<th>Common misreading</th>
+</tr>
+</thead><tbody><tr>
+<td><code>totalDataManifest</code>, <code>totalDeleteManifests</code></td>
+<td>Manifest counts reported for the scan</td>
+<td>All manifests ever created for the table</td>
+</tr>
+<tr>
+<td><code>scannedDataManifests</code>, <code>scannedDeleteManifests</code></td>
+<td>Manifests scanned during planning</td>
+<td>Exact number of remote GET requests or cache misses</td>
+</tr>
+<tr>
+<td><code>skippedDataManifests</code>, <code>skippedDeleteManifests</code></td>
+<td>Manifests excluded from the scan</td>
+<td>Each skipped manifest equals one skipped data file</td>
+</tr>
+<tr>
+<td><code>resultDataFiles</code></td>
+<td>Data files selected into file tasks before task splitting</td>
+<td>Spark task count, partitions in the table or rows returned</td>
+</tr>
+<tr>
+<td><code>skippedDataFiles</code></td>
+<td>File entries rejected by planning filters</td>
+<td>Every file omitted from the whole table, including all entries inside skipped manifests</td>
+</tr>
+<tr>
+<td><code>totalDataFileSize</code></td>
+<td>Selected data-file sizes accumulated by planning</td>
+<td>Actual projected/compressed bytes read over the network</td>
+</tr>
+<tr>
+<td><code>indexedDeleteFiles</code></td>
+<td>Delete files added to the delete index</td>
+<td>Rows removed by those files</td>
+</tr>
+<tr>
+<td><code>positionalDeleteFiles</code>, <code>equalityDeleteFiles</code></td>
+<td>Delete-index categories</td>
+<td>Two runtime CPU-time measurements</td>
+</tr>
+<tr>
+<td><code>resultDeleteFiles</code></td>
+<td>Delete-file associations accumulated for planned data files</td>
+<td>Necessarily a globally distinct file count</td>
+</tr>
+<tr>
+<td><code>totalDeleteFileSize</code></td>
+<td>Delete content sizes accumulated for those associations</td>
+<td>Necessarily physical I/O bytes after caching/reuse</td>
+</tr>
+<tr>
+<td><code>skippedDeleteFiles</code></td>
+<td>Delete-file planning exclusions</td>
+<td>Rows surviving deletion</td>
+</tr>
+<tr>
+<td><code>totalPlanningDuration</code></td>
+<td>Iceberg-reported scan planning duration</td>
+<td>Entire Spark planning time or SQL wall time</td>
+</tr>
+</tbody></table></div>
+<p>The source distinction matters: <code>ScanMetricsUtil.indexedDeleteFile()</code> increments index/type counters; <code>fileTask()</code> increments <code>resultDeleteFiles</code> by the length of the delete-file array attached to each data file. A shared delete file can therefore contribute to multiple task associations. Similarly, manifest skipping can avoid visiting contained file entries, so <code>skippedDataFiles / (skippedDataFiles + resultDataFiles)</code> is not universally a table-wide pruning percentage.</p>
+<p>Source: <a href="../../../../oss/apache/iceberg/core/src/main/java/org/apache/iceberg/metrics/ScanMetricsUtil.java#L33">ScanMetricsUtil.java</a>, <a href="../../../../oss/apache/iceberg/core/src/main/java/org/apache/iceberg/ManifestGroup.java#L340">ManifestGroup.java</a>.</p>
+&lt;details&gt;
+&lt;summary&gt;Can these counters prove partition evolution helped?&lt;/summary&gt;
+
+<p>No. Iceberg can plan files written under different partition specs, but selected/skipped counters do not attribute the benefit to spec evolution versus partition predicates, file statistics or other filters. For that claim, inspect spec IDs, file layout and predicate projection, then compare controlled scans. A table with no partition evolution can also show strong file pruning.</p>
+<p>Likewise, a skipped file counter does not prove page-index pruning, SIMD, fewer allocations or faster decoding. Those happen at other layers. Metadata reading is still work even when data files are never opened for row decoding.</p>
+&lt;/details&gt;
+
+<h2 id="q1-exact-jvm-versus-comet-scan-comparison">Q1: exact JVM versus Comet scan comparison</h2>
+<p>These are normal-mode measured iteration 5, not the five-run median. The result is four rows with matching schema/count/digest. The names in the two UIs differ, so compare semantics rather than literal display strings.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Metric</th>
+<th>JVM <code>BatchScan local.tpch.lineitem</code></th>
+<th><code>CometIcebergNativeScan</code></th>
+</tr>
+</thead><tbody><tr>
+<td>Result data files</td>
+<td>81</td>
+<td>81</td>
+</tr>
+<tr>
+<td>Skipped data files</td>
+<td>2</td>
+<td>2</td>
+</tr>
+<tr>
+<td>Scanned data manifests</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Skipped data manifests</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Scanned delete manifests</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Indexed / positional delete files</td>
+<td>80 / 80</td>
+<td>80 / 80</td>
+</tr>
+<tr>
+<td>Equality delete files</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Result delete-file associations</td>
+<td>80</td>
+<td>80</td>
+</tr>
+<tr>
+<td>Skipped delete files</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td>Planning duration</td>
+<td>5 ms</td>
+<td>5 ms</td>
+</tr>
+<tr>
+<td>Planned data-file bytes</td>
+<td>1,967,029</td>
+<td>1920.9 KiB, UI-rounded</td>
+</tr>
+<tr>
+<td>Planned delete-file bytes</td>
+<td>140,959</td>
+<td>137.7 KiB, UI-rounded</td>
+</tr>
+<tr>
+<td>File splits read/processed</td>
+<td>81</td>
+<td>81</td>
+</tr>
+<tr>
+<td>Row deletes applied</td>
+<td>601</td>
+<td>Not exposed</td>
+</tr>
+<tr>
+<td>Scan output rows</td>
+<td>59,153</td>
+<td>59,068</td>
+</tr>
+<tr>
+<td>Following filter output rows</td>
+<td>59,068</td>
+<td>59,068</td>
+</tr>
+</tbody></table></div>
+<p><a href="assets/spark-ui/normal-q1-jvm-metrics.json">JVM node metrics</a> - <a href="assets/spark-ui/normal-q1-comet-metrics.json">Comet node metrics</a> - <a href="assets/spark-ui/normal-q1-jvm-sql.png">JVM screenshot</a> - <a href="assets/spark-ui/normal-q1-comet-sql.png">Comet screenshot</a>.</p>
+<pre><code>JVM: columnar scan -&gt; 59,153 rows -&gt; downstream filter -&gt; 59,068 rows
+Comet: native scan -&gt; 59,068 rows -&gt; downstream filter -&gt; 59,068 rows</code></pre>
+<p>Observed: the scan boundary reports 85 fewer rows in Comet; both streams agree after filtering. Interpretation: predicate work can occur at different points, so compare equivalent logical boundaries. This is not 85 extra deleted rows and not evidence of incorrect results. The row counts alone cannot isolate whether page selection, decode-time filtering or another reader step supplied that reduction.</p>
+<p>The current local Comet source excludes the Java <code>numDeletes</code> counter because the native reader does not provide the corresponding deletes-applied count. Reporting zero would be misleading. Absence is a metric-coverage gap, not zero deletion work. Comet&#39;s scan time is native elapsed-compute reporting aggregated across tasks, not the SQL wall-clock duration; <code>bytes_scanned</code> is also distinct from planned full-file sizes.</p>
+<h2 id="q3-and-q9-selective-versus-broad-scans">Q3 and Q9: selective versus broad scans</h2>
+<p>Normal-mode measured iteration 5; values below are the same in JVM and Comet for planning counts. Table association is determined from the saved physical plans, not merely the repeated Comet scan-node name.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Query / table</th>
+<th>Result data files</th>
+<th>Skipped data files</th>
+<th>Result delete-file associations</th>
+<th>JVM scan rows</th>
+<th>Comet scan rows</th>
+</tr>
+</thead><tbody><tr>
+<td>Q3 customer</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>1,500</td>
+<td>337</td>
+</tr>
+<tr>
+<td>Q3 orders</td>
+<td>39</td>
+<td>41</td>
+<td>32</td>
+<td>7,309</td>
+<td>7,212</td>
+</tr>
+<tr>
+<td>Q3 lineitem</td>
+<td>45</td>
+<td>38</td>
+<td>44</td>
+<td>32,316</td>
+<td>31,938</td>
+</tr>
+<tr>
+<td>Q9 part</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>2,000</td>
+<td>2,000</td>
+</tr>
+<tr>
+<td>Q9 supplier</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>100</td>
+<td>100</td>
+</tr>
+<tr>
+<td>Q9 partsupp</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>8,000</td>
+<td>8,000</td>
+</tr>
+<tr>
+<td>Q9 orders</td>
+<td>80</td>
+<td>0</td>
+<td>67</td>
+<td>14,850</td>
+<td>14,850</td>
+</tr>
+<tr>
+<td>Q9 lineitem</td>
+<td>83</td>
+<td>0</td>
+<td>81</td>
+<td>59,572</td>
+<td>59,572</td>
+</tr>
+<tr>
+<td>Q9 nation</td>
+<td>1</td>
+<td>0</td>
+<td>0</td>
+<td>25</td>
+<td>25</td>
+</tr>
+</tbody></table></div>
+<p>Evidence: <a href="assets/spark-ui/normal-q3-jvm-metrics.json">Q3 JVM</a>, <a href="assets/spark-ui/normal-q3-comet-metrics.json">Q3 Comet</a>, <a href="assets/spark-ui/normal-q3-comet.plan.txt">Q3 native plan</a>, <a href="assets/spark-ui/normal-q9-jvm-metrics.json">Q9 JVM</a>, <a href="assets/spark-ui/normal-q9-comet-metrics.json">Q9 Comet</a>, <a href="assets/spark-ui/normal-q9-comet.plan.txt">Q9 native plan</a>.</p>
+<p>Q3&#39;s order/ship-date conditions exclude many files. The customer segment predicate also demonstrates earlier row filtering in the native path even when the one customer file cannot be pruned. Q9&#39;s <code>moccasin</code> name predicate does not produce data-file skipping in this capture. Zero skipped files is not proof that pushdown is broken: metadata may be unable to reject a file containing both matching and nonmatching rows.</p>
+<p>The teaching contrast: <strong>Comet can improve execution even when Iceberg selects the same files.</strong> Chapter 19&#39;s paired timings demonstrate an observed whole-query difference; these counters do not apportion it among scans, joins, conversion, aggregation and shuffle.</p>
+<h2 id="q18-planned-work-is-not-the-same-as-completed-runtime-work">Q18: planned work is not the same as completed runtime work</h2>
+<p>The normal Q18 plan contains two lineitem scan nodes, semi joins and reused exchange work. Both engines return zero final rows. The saved Comet metrics include scan nodes with planning counters but no output-row metric value in the exported node data. Do not fill those absent values with zero or assume every planned branch did equal work.</p>
+<p>Use <a href="assets/spark-ui/normal-q18-jvm-metrics.json">Q18 JVM metrics</a>, <a href="assets/spark-ui/normal-q18-comet-metrics.json">Q18 Comet metrics</a> and the <a href="assets/spark-ui/normal-q18-comet.plan.txt">saved plan</a> together. Counting all scan boxes is not a distinct table-file inventory; the same table appears more than once, and reuse/empty inputs affect execution. Establish job/stage/task activity before interpreting missing counters. Q18 remains a semantics example until a nonempty representative run is measured.</p>
+<h2 id="writes-distinguish-task-output-from-committed-state">Writes: distinguish task output from committed state</h2>
+<pre><code>Executor writes files -&gt; reports records/bytes + commit messages -&gt; driver validates -&gt; catalog publishes snapshot</code></pre>
+<p>Iceberg&#39;s Java <code>SparkWrite.TaskCommit.reportOutputMetrics()</code> reports bytes and records from task files into Spark task output metrics. It does not turn those counters into proof that the driver committed a snapshot. An attempt may write files before abort, retry or commit failure. Native write metric coverage must be inspected separately; do not assume Java writer instrumentation is shared automatically.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Evidence to inspect</th>
+</tr>
+</thead><tbody><tr>
+<td>How many task records/bytes were produced?</td>
+<td>Stage/task output metrics; attempt status and retries</td>
+</tr>
+<tr>
+<td>What new files became visible?</td>
+<td>Successful snapshot&#39;s summary plus current file metadata</td>
+</tr>
+<tr>
+<td>Which partitions received files?</td>
+<td>Current files metadata partition values/spec IDs; distinguish new files from existing files</td>
+</tr>
+<tr>
+<td>How many files did this operation add?</td>
+<td>Snapshot summary such as <code>added-data-files</code>, when present; correlate the correct snapshot/operation</td>
+</tr>
+<tr>
+<td>Was native writing actually used?</td>
+<td>Executed operator plan and relevant task metrics, not just Comet enabled in config</td>
+</tr>
+<tr>
+<td>Was time spent committing rather than writing?</td>
+<td>Commit instrumentation/logs correlated with task completion; SQL duration alone cannot separate them</td>
+</tr>
+</tbody></table></div>
+<p>Read-only inspection examples; use the actual target table created by the demo:</p>
+<pre><code>SELECT committed_at, snapshot_id, operation, summary
+FROM local.demo.target.snapshots
+ORDER BY committed_at DESC;
+
+SELECT content, spec_id, partition, count(*) AS files,
+       sum(file_size_in_bytes) AS file_bytes
+FROM local.demo.target.files
+GROUP BY content, spec_id, partition;</code></pre>
+<p>These current-file totals are not automatically per-write deltas. Match the operation&#39;s snapshot, account for concurrent commits and distinguish data files from delete files using <code>content</code>. There is no verified generic &quot;Dynamic Partition Alignment&quot; metric in our capture. Runtime scan filtering, write distribution requirements and the set of partitions updated are distinct facts.</p>
+<p>Source: <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java#L640">SparkWrite.java</a>. The demo&#39;s <code>src/iceberg_pipeline_demo.py</code> records INSERT elapsed time including driver commit; the read comparison runner does not test write throughput.</p>
+<h2 id="maintenance-use-procedure-results-and-beforeafter-state">Maintenance: use procedure results and before/after state</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Operation</th>
+<th>What to inspect</th>
+<th>What not to infer</th>
+</tr>
+</thead><tbody><tr>
+<td><code>rewrite_data_files</code></td>
+<td>Rewrite job DAG; returned <code>rewritten_data_files_count</code> / <code>added_data_files_count</code>; file sizes/counts before and after; checksum</td>
+<td>Every CALL&#39;s command-node plan exposes all internal native operators</td>
+</tr>
+<tr>
+<td><code>expire_snapshots</code></td>
+<td>Returned deleted data/delete/manifest counts; snapshot history before and after; current table still readable</td>
+<td>Removing snapshots means all their files are deleted; retained snapshots can still reference shared files</td>
+</tr>
+<tr>
+<td><code>remove_orphan_files</code></td>
+<td>Returned orphan locations; safe retention policy, scope and dry-run where supported</td>
+<td>A file absent from a recent scan is orphaned or safe to remove</td>
+</tr>
+</tbody></table></div>
+<p>Apache Iceberg&#39;s Spark procedure here is <code>rewrite_data_files</code>; vendor <code>OPTIMIZE</code> syntax is not a universal synonym. Compaction is read/rewrite work followed by a metadata commit. Snapshot expiry and orphan cleanup do not rewrite table rows, but can perform real physical file deletion; calling them purely metadata-only can hide substantial I/O and risk.</p>
+<p>Our separate <code>04-run-maintenance-demo.sh</code> uses <code>iceberg_pipeline_demo.py</code> to save rewrite procedure results, before/after file statistics and matching checksums. It separately measures snapshot expiry and records snapshot counts. The script&#39;s aggressive expiry cutoff is for its disposable demo table, not a production retention recipe. Merely finding the code does not establish a fresh successful run; inspect its generated summary for the particular execution.</p>
+<p>The saved Q1/Q3/Q9/Q18 UI evidence contains reads, not these maintenance measurements. No cloud deletion-rate claim follows from local file operations. To report a deletion rate, define successful objects deleted and the measured interval, distinguish attempts/retries, and collect relevant storage/client telemetry. A thread pool doing deletion need not map one object to one Spark task.</p>
+<p>Sources: <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/procedures/RewriteDataFilesProcedure.java#L70">RewriteDataFilesProcedure.java</a>, <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/procedures/ExpireSnapshotsProcedure.java#L73">ExpireSnapshotsProcedure.java</a>, <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/procedures/RemoveOrphanFilesProcedure.java#L90">RemoveOrphanFilesProcedure.java</a>.</p>
+<h2 id="presenter-walkthrough-and-troubleshooting">Presenter walkthrough and troubleshooting</h2>
+<ol>
+<li>Open Q1&#39;s matched execution pair from chapter 19. Show 81 selected files, two skipped files and equal planning metrics: same planned input does not imply same execution cost.</li>
+<li>Show positional deletes and the JVM 601 deletes-applied counter. Explain why Comet does not expose an equivalent counter, rather than saying it did no delete work.</li>
+<li>Follow rows through scan and filter: compare at an equivalent logical boundary, then verify final schema/count/hash.</li>
+<li>Open Q3: show file pruning first, then forced-mode exchanges/sorts/joins. Iceberg file pruning and Spark shuffle partitioning solve different problems.</li>
+<li>Open Q9: no data-file pruning here, but a longer processing chain. Use paired medians, not summed node times, for latency comparison.</li>
+<li>Treat Q18&#39;s empty result as an execution/metric caveat. Switch to the separate write/maintenance evidence only when explaining those operations.</li>
+</ol>
+&lt;details&gt;
+&lt;summary&gt;Why are Iceberg metrics missing or suspicious in History Server?&lt;/summary&gt;
+
+<ul>
+<li>Verify this is an Iceberg scan of the expected snapshot, not a Parquet-path read or a different execution.</li>
+<li>Distinguish unsupported counters from valid zero values, omitted values and unexecuted branches. A planned operator need not have a completed runtime measurement.</li>
+<li>Include the matching Iceberg/Comet jars when replaying custom metrics. The demo&#39;s History Server helper handles this; inspect logs for class-loading failures.</li>
+<li>Use uppercase <code>/SQL/</code> paths. SQL REST listings are paginated; do not conclude a later execution is absent from the application because it was absent from the first page.</li>
+<li>Verify the query label/iteration and app ID. SQL IDs alone do not match queries across applications.</li>
+<li>In the local Comet scan implementation, driver metrics are guarded against repeated posting because summed updates could otherwise double-count planning values. Suspicious multiples warrant source/event inspection, not an assumption of twice the I/O.</li>
+<li>Compare units: raw bytes versus rounded KiB, summed task time versus wall time, whole-application executor totals versus a selected SQL execution.</li>
+</ul>
+&lt;/details&gt;
+
+<h2 id="validation-source-scope-and-remaining-gaps">Validation, source scope and remaining gaps</h2>
+<p>Inspected <a href="../../../../oss/apache/iceberg/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/source/TestSparkReadMetrics.java#L45">TestSparkReadMetrics.java</a>: its v1 fixture creates two files and asserts one result data file and one skipped data file, along with manifest/planning counters. This is inspected coverage, not a test run in this documentation task. Newer reference-source metrics do not imply availability in the 1.8.1 runtime.</p>
+<p>The user supplied a video link and a prose description of possible UI metrics. Its page/caption-track metadata were retrievable, but the transcript endpoint returned no text. This chapter is a source-and-capture comparison, not a verified video transcript summary or attribution to its speaker.</p>
+<p>No engine code changed and no query, write, cleanup or benchmark was rerun for this chapter. Durable captured evidence is linked throughout. Remaining work for a stronger performance claim: representative scale, nonempty Q18, isolated reader/operator profiling, controlled layout comparisons, multi-executor networking and separately captured write/maintenance results.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="19-reading-spark-ui.html"><small>Previous</small>Reading Spark UI: normal plans versus forced shuffle</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>
