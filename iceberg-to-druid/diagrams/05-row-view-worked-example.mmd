@@ -1,0 +1,38 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":48,"htmlLabels":false},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#0f172a"}}}%%
+flowchart LR
+  subgraph INPUT["One source batch - Java Arrow"]
+    V["country: US, UK, US
+amount: 10, 20, 30"]
+  end
+  subgraph ROWS["Two ways to expose the same values"]
+    MAP["Upstream materialization
+new map + InputRow per record"]
+    VIEW["Feature adapter
+one reusable InputRow cursor
+position 0, then 1, then 2"]
+  end
+  subgraph INDEX["Per-task in-memory IncrementalIndex"]
+    DIM["Encode dimension values
+example dictionary: US=0, UK=1"]
+    MET["Update count and amount sum
+rollup=false: keep 3 entries"]
+  end
+  subgraph SEGMENT["Local Druid segment"]
+    OUT[("Persist columns and indexes
+country IDs: 0, 1, 0
+amount_sum: 10, 20, 30")]
+  end
+  V --> MAP
+  V --> VIEW
+  MAP --> DIM
+  VIEW -- "consume before advancing" --> DIM
+  DIM --> MET --> OUT
+  classDef source fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  classDef bridge fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#334155
+  class V source
+  class MAP,VIEW bridge
+  class DIM,MET compute
+  class OUT store
+  linkStyle default stroke:#64748b,stroke-width:1.6px,stroke-linecap:round

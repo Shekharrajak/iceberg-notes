@@ -1,0 +1,70 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":30,"rankSpacing":48,"htmlLabels":false},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#0f172a"}}}%%
+flowchart TD
+  subgraph LAKE["Iceberg table and Parquet storage"]
+    S["Selected snapshot and manifests"]
+    F[("Planned Parquet files")]
+    S --> F
+  end
+  subgraph TASKS["Native ingestion task execution"]
+    M{"Configured reader path"}
+    P["Standard: splittable warehouse source
+Supervisor assigns input splits"]
+    A["Worker A: read split A
+rows - local index - persist / push"]
+    B["Worker B: read split B
+rows - local index - persist / push"]
+    AR["Current Arrow: non-splittable
+Sequential task reads batches
+rows - local index - persist / push"]
+    PUB["Successful task / supervisor
+publishes segment metadata"]
+    M -- "standard, parallel eligible" --> P
+    P --> A
+    P --> B
+    M -- "useArrowReader=true" --> AR
+    A -. "segment report" .-> PUB
+    B -. "segment report" .-> PUB
+    AR -. "ready to publish" .-> PUB
+  end
+  subgraph DURABLE["Two different durable stores"]
+    DS[("Deep storage
+Druid segment bytes")]
+    DB[("Metadata database
+Published segment descriptors")]
+  end
+  subgraph SERVE["Usual Historical query-serving path"]
+    C["Coordinator manages placement"]
+    H1["Historical A
+loaded segment set A"]
+    H2["Historical B
+loaded segment set B"]
+    BR["Broker routes query
+and combines partial results"]
+    Q(["SQL client
+SUM(amount_sum) GROUP BY country"])
+  end
+  F --> M
+  A -- "upload" --> DS
+  B -- "upload" --> DS
+  AR -- "upload" --> DS
+  PUB --> DB
+  DB --> C
+  C -. "load assignment" .-> H1
+  C -. "load assignment" .-> H2
+  DS -- "download / cache" --> H1
+  DS -- "download / cache" --> H2
+  Q -- "SQL planning / dispatch" --> BR
+  BR -- "query selected segments" --> H1
+  BR -- "query selected segments" --> H2
+  H1 -. "partial result" .-> BR
+  H2 -. "partial result" .-> BR
+  BR -. "combined result" .-> Q
+  classDef external fill:#f1f5f9,stroke:#64748b,color:#334155
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e
+  classDef worker fill:#dcfce7,stroke:#16a34a,color:#14532d
+  classDef arrow fill:#ffedd5,stroke:#f97316,color:#7c2d12
+  class S,F,DS,DB,Q external
+  class M,P,PUB,C,BR control
+  class A,B,H1,H2 worker
+  class AR arrow
+  linkStyle default stroke:#64748b,stroke-width:1.6px,stroke-linecap:round

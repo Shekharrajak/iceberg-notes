@@ -1,0 +1,39 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","background":"#ffffff","lineColor":"#64748b","primaryTextColor":"#0f172a"}}}%%
+flowchart TB
+  subgraph SOURCE["Common Iceberg source"]
+    T[("Selected snapshot / Parquet files")]
+  end
+  subgraph STANDARD["Upstream master — standard path"]
+    F["Plan files → retain file locations"]
+    G["Warehouse source + Parquet Group reader"]
+    FL["Flatten and parse into InputRow"]
+  end
+  subgraph ARROW["Upstream master — Arrow path"]
+    A["Projected Iceberg scan → ArrowReader"]
+    V["ColumnarBatch: typed column vectors"]
+    MAP["Each row: new map + MapBasedInputRow"]
+  end
+  subgraph FEATURE["Feature branch — no transforms"]
+    RAC["readBatches → RowsAndColumns view"]
+    VIEW["BatchToInputRowIterator: one reusable row view"]
+  end
+  subgraph DOWNSTREAM["Druid ingestion — still row-driven"]
+    TR["Transform/filter decoration where configured"]
+    IDX["Incremental index and aggregators"]
+    SEG["Druid segment writer"]
+  end
+  T --> F --> G --> FL --> TR
+  T --> A --> V --> MAP --> TR
+  V -->|"feature path instead of materialization"| RAC --> VIEW --> IDX
+  TR --> IDX --> SEG
+  class T lake
+  class F,G,FL,A,V,MAP scan
+  class RAC,VIEW control
+  class TR,IDX,SEG compute
+
+  classDef lake fill:#f1f5f9,stroke:#64748b,color:#334155,stroke-width:1.4px
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:1.6px
+  classDef scan fill:#ffedd5,stroke:#f97316,color:#7c2d12,stroke-width:1.6px
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.6px
+  classDef serving fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.6px
+  linkStyle default stroke:#64748b,stroke-width:1.7px,stroke-linecap:round

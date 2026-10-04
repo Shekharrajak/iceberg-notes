@@ -1,0 +1,52 @@
+[
+  {
+    "id": "01-system-flow",
+    "title": "Iceberg to Druid: end-to-end components",
+    "width": 1472,
+    "height": 1483,
+    "fonts": [
+      "Ubuntu, Arial, sans-serif"
+    ],
+    "curvedPaths": 17
+  },
+  {
+    "id": "02-reader-boundaries",
+    "title": "Reader boundaries: master versus feature branch",
+    "width": 1010,
+    "height": 994,
+    "fonts": [
+      "Ubuntu, Arial, sans-serif"
+    ],
+    "curvedPaths": 13
+  },
+  {
+    "id": "03-storage-boundaries",
+    "title": "Druid storage: persist, push, publish and serve",
+    "width": 390,
+    "height": 1574,
+    "fonts": [
+      "Ubuntu, Arial, sans-serif"
+    ],
+    "curvedPaths": 11
+  },
+  {
+    "id": "04-distributed-ingest-and-query",
+    "title": "Alternative native ingestion routes and distributed Druid serving",
+    "width": 1430,
+    "height": 1871,
+    "fonts": [
+      "Ubuntu, Arial, sans-serif"
+    ],
+    "curvedPaths": 26
+  },
+  {
+    "id": "05-row-view-worked-example",
+    "title": "Same three records: materialized rows or a reusable batch-backed view",
+    "width": 1734,
+    "height": 280,
+    "fonts": [
+      "Ubuntu, Arial, sans-serif"
+    ],
+    "curvedPaths": 6
+  }
+]

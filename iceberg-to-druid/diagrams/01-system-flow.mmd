@@ -1,0 +1,53 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","background":"#ffffff","lineColor":"#64748b","primaryTextColor":"#0f172a"}}}%%
+flowchart TB
+  subgraph LAKE["Iceberg lakehouse — source of truth"]
+    C["Catalog: resolve table"]
+    M[("Table metadata / snapshots / manifests")]
+    P[("Parquet data files")]
+  end
+  subgraph CONTROL["Druid ingestion control"]
+    S[/"Ingestion specification: table, time, columns, transforms"/]
+    O["Overlord / ingestion task orchestration"]
+  end
+  subgraph TASK["Ingestion task — native path shown"]
+    I["IcebergInputSource: select snapshot and reader"]
+    R["Standard or Arrow reader"]
+    X["InputRow → transforms → incremental index"]
+    W["Persist and merge Druid segments locally"]
+    PUSH["Push segment objects"]
+    PUB["Publish segment metadata through task action"]
+  end
+  subgraph STORAGE["Druid durable storage — separate from source table"]
+    DS[("Deep storage: Druid segment objects")]
+    DB[("Metadata database: segment descriptors")]
+  end
+  subgraph SERVE["Druid serving — normal Historical path"]
+    CO["Coordinator: segment placement"]
+    H["Historical: load/cache segments"]
+    B["Broker: route and merge queries"]
+    Q[/"Dashboard / SQL client"/]
+  end
+  S --> O --> I
+  C --> I
+  M -->|"snapshot and file planning"| I
+  I --> R
+  P -->|"selected data files"| R
+  R --> X --> W --> PUSH --> PUB
+  PUSH --> DS
+  PUB --> DB
+  DB -. "published segments become visible" .-> CO
+  CO -. "load assignment" .-> H
+  DS -->|"segment bytes"| H
+  Q --> B --> H
+  class C,M,P,DS,DB lake
+  class S,O,CO control
+  class I,R scan
+  class X,W,PUSH,PUB compute
+  class H,B,Q serving
+
+  classDef lake fill:#f1f5f9,stroke:#64748b,color:#334155,stroke-width:1.4px
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:1.6px
+  classDef scan fill:#ffedd5,stroke:#f97316,color:#7c2d12,stroke-width:1.6px
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.6px
+  classDef serving fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.6px
+  linkStyle default stroke:#64748b,stroke-width:1.7px,stroke-linecap:round

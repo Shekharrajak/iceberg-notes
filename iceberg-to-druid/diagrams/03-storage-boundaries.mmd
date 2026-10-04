@@ -1,0 +1,37 @@
+%%{init: {"theme":"base","flowchart":{"curve":"basis","nodeSpacing":32,"rankSpacing":48},"themeVariables":{"fontFamily":"Ubuntu, Arial, sans-serif","fontSize":"15px","background":"#ffffff","lineColor":"#64748b","primaryTextColor":"#0f172a"}}}%%
+flowchart TB
+  subgraph INDEX["Task memory"]
+    R[/"InputRow"/]
+    K["Time / dimensions / aggregation state"]
+    D["Dimension dictionaries and row keys"]
+  end
+  subgraph LOCAL["Task-local storage"]
+    P[("Persisted index fragments")]
+    M["Merge: remap dictionaries, order rows, combine metrics"]
+    S[("Final Druid segment: encoded columns and indexes")]
+  end
+  subgraph DURABLE["Druid durable publication"]
+    O[("Deep-storage segment object")]
+    TX["Task action → metadata transaction"]
+    META[("Published segment descriptor / loadSpec")]
+  end
+  subgraph READ["Query serving"]
+    H["Historical: acquire segment resources"]
+    Q["Time pruning / bitmap indexes / selected columns"]
+  end
+  R --> K --> D -->|"persist"| P
+  P --> M --> S -->|"push"| O
+  O -->|"successful upload descriptor"| TX --> META
+  META -. "placement and availability" .-> H
+  O -->|"load segment data"| H --> Q
+  class R,K,D,M compute
+  class P,S,O,META lake
+  class TX control
+  class H,Q serving
+
+  classDef lake fill:#f1f5f9,stroke:#64748b,color:#334155,stroke-width:1.4px
+  classDef control fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:1.6px
+  classDef scan fill:#ffedd5,stroke:#f97316,color:#7c2d12,stroke-width:1.6px
+  classDef compute fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:1.6px
+  classDef serving fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.6px
+  linkStyle default stroke:#64748b,stroke-width:1.7px,stroke-linecap:round
