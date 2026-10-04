@@ -8,6 +8,8 @@ Chapters 1-18 source check: 2026-09-30. The exact revisions, local modifications
 
 For browser reading, open the [formatted notebook](index.html). It combines the complete text, tables, code blocks and inline diagrams, with chapter navigation and diagram zoom controls. Markdown remains the editable source; no server or network connection is needed to read the HTML.
 
+Related notebook: [Iceberg to Druid](../iceberg-to-druid/index.html) follows Parquet data through Arrow readers, row-based indexing, segment storage, and distributed queries.
+
 ## Reading map
 
 | Chapter | Questions it answers |
