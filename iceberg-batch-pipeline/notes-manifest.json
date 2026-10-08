@@ -7,7 +7,7 @@
       "title": "Iceberg batch pipeline source notebook",
       "headings": 6,
       "diagrams": 0,
-      "sha256": "d6ea72c257f5dd7e4e8404b88c04b1e295194019099d0039da3ea915d1b9bb11"
+      "sha256": "89c7c38571da6a77775cd8959234f09470d0a85a2e6788eaf67e4a252a507de4"
     },
     {
       "source": "01-system-architecture.md",
@@ -77,9 +77,9 @@
       "source": "09-source-ledger.md",
       "html": "09-source-ledger.html",
       "title": "Source revisions evidence and validation limits",
-      "headings": 18,
+      "headings": 20,
       "diagrams": 0,
-      "sha256": "7908c68b06bf3772ae9b98a149bd761573e817b42fc90de851a65041de61fc1b"
+      "sha256": "55729ab4870defb2df368372ea90e440444fabef6358989bc6ea189db9f61d89"
     },
     {
       "source": "10-datafusion-and-connector.md",
@@ -143,7 +143,7 @@
       "title": "Distributed Iceberg planning execution and compaction",
       "headings": 11,
       "diagrams": 3,
-      "sha256": "4b7abff3614c97f7470eac29a683f4714455d79dee0652706693c095493412b8"
+      "sha256": "1e06b77b88db9d1217884fc4892a227dccc0733c97af7a5655a989148bcaf1d6"
     },
     {
       "source": "18-iceberg-tests-and-benchmark-evidence.md",
@@ -151,7 +151,7 @@
       "title": "Iceberg integration tests benchmark coverage and evidence gaps",
       "headings": 12,
       "diagrams": 2,
-      "sha256": "1a79b43d4004f4f1eea6012ed39e2ba9414d6495d7a794dc5233567784ebca7f"
+      "sha256": "082e6c90c813c154a33d1730ddc6584c81d1ebeae85e696201bc8232741c65b6"
     },
     {
       "source": "19-reading-spark-ui.md",
@@ -170,12 +170,36 @@
       "sha256": "d830127ff7f82486361249cee4648c78da877a34f2e7ff35d03237798f63f9a1"
     },
     {
+      "source": "21-compaction-algorithms-and-execution.md",
+      "html": "21-compaction-algorithms-and-execution.html",
+      "title": "Compaction algorithms and execution internals",
+      "headings": 23,
+      "diagrams": 0,
+      "sha256": "902cb26a20f8d1e292e3626a7d6e4e75d41a5a7238bc1845d1a24e8ac5e7b3b4"
+    },
+    {
+      "source": "22-table-health-and-compaction-benchmark.md",
+      "html": "22-table-health-and-compaction-benchmark.html",
+      "title": "Table health, maintenance SQL and the compaction benchmark",
+      "headings": 29,
+      "diagrams": 0,
+      "sha256": "abbf40e1bdaf086c0cf497226414209f454950338e257c8f9f2d664b82633b90"
+    },
+    {
+      "source": "23-comet-sort-sql-to-rust.md",
+      "html": "23-comet-sort-sql-to-rust.html",
+      "title": "CometSort: SQL, Spark plans and the Rust sorter",
+      "headings": 17,
+      "diagrams": 0,
+      "sha256": "5c28f918e59008620b5b085ef45fc3948607ec148bc4fff7e65499a6e9642737"
+    },
+    {
       "source": "VALIDATION.md",
       "html": "VALIDATION.html",
       "title": "Documentation validation",
-      "headings": 8,
+      "headings": 10,
       "diagrams": 0,
-      "sha256": "5e973961f7cdfcee441b68ea57abd931b0ef37841ad44647498b4c717b95bd27"
+      "sha256": "ddbaeb533a76a17cb1d5e46c0e893398ae0f62c95d871dc921466c127abfc7cf"
     },
     {
       "source": "scripts/README.md",

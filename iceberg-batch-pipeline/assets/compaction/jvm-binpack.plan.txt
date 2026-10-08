@@ -1,0 +1,16 @@
+== Physical Plan ==
+AppendData (3)
++- * ColumnarToRow (2)
+   +- BatchScan local.compaction_bench.clean (1)
+
+
+(1) BatchScan local.compaction_bench.clean
+Output [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]
+local.compaction_bench.clean (branch=null) [filters=, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]
+
+(3) AppendData
+Input [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]
+Arguments: org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$3731/0x000000f0020d5840@5c6c4385, IcebergWrite(table=local.compaction_bench.clean, format=PARQUET)

@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Table health, maintenance SQL and the compaction benchmark | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
+<li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html" aria-current="page"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="22-table-health-and-compaction-benchmark.md">Markdown source</a></header><article><h1 id="table-health-maintenance-sql-and-the-compaction-benchmark">Table health, maintenance SQL and the compaction benchmark</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#1-which-operation-fixes-which-problem">1. Which operation fixes which problem?</a></li>
+<li><a href="#2-table-health-has-several-dimensions">2. Table health has several dimensions</a></li>
+<li><a href="#3-metadata-maintenance-algorithms">3. Metadata-maintenance algorithms</a></li>
+<li><a href="#4-the-measured-jvm-versus-comet-result">4. The measured JVM versus Comet result</a></li>
+<li><a href="#5-executable-sql-for-the-benchmark-cases">5. Executable SQL for the benchmark cases</a></li>
+<li><a href="#6-how-the-dataset-was-fragmented">6. How the dataset was fragmented</a></li>
+<li><a href="#7-read-only-health-sql">7. Read-only health SQL</a></li>
+<li><a href="#8-other-maintenance-sql-shapes">8. Other maintenance SQL shapes</a></li>
+<li><a href="#9-read-the-internal-plans-in-spark-history">9. Read the internal plans in Spark History</a></li>
+<li><a href="#10-an-engaging-five-minute-demo">10. An engaging five-minute demo</a></li>
+<li><a href="#11-choosing-what-to-optimize-next">11. Choosing what to optimize next</a></li>
+<li><a href="#12-presenter-answers-to-common-questions">12. Presenter answers to common questions</a></li></ul></nav></details>
+<p>A healthy table has manageable files and metadata, affordable delete application, useful clustering, and retention that matches its readers. Compaction addresses only some of these. Comet can reduce eligible rewrite execution cost; it does not choose the retention policy or make every maintenance operation native.</p>
+<p>Start with <a href="21-compaction-algorithms-and-execution.html">compaction algorithms and execution internals</a> for the source trace. This chapter connects the mechanisms to table health, the October 7 measurements and an audience demo.</p>
+<h2 id="1-which-operation-fixes-which-problem">1. Which operation fixes which problem?</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Symptom</th>
+<th>Operation</th>
+<th>Physical algorithm</th>
+<th>Expected effect and limit</th>
+</tr>
+</thead><tbody><tr>
+<td>Too many small data files</td>
+<td>Bin-pack <code>rewrite_data_files</code></td>
+<td>Read visible rows, combine task work, write larger files</td>
+<td>Fewer file opens/descriptors; no deliberate new clustering</td>
+</tr>
+<tr>
+<td>Poor selective-filter locality</td>
+<td>Sort or Z-order data rewrite</td>
+<td>Compute ordering keys, exchange, sort, write</td>
+<td>Can improve file/row-group pruning; pays extra shuffle and sort cost</td>
+</tr>
+<tr>
+<td>Many deleted rows still physically present</td>
+<td>Delete-aware data rewrite</td>
+<td>Apply deletes while scanning, write survivors</td>
+<td>Less dead data in replacement files; visible rows unchanged</td>
+</tr>
+<tr>
+<td>Many small position-delete files</td>
+<td><code>rewrite_position_delete_files</code></td>
+<td>Read delete records, retain live paths, sort, rewrite</td>
+<td>Fewer delete-file opens; not a generic equality-delete rewrite</td>
+</tr>
+<tr>
+<td>Many fragmented manifests</td>
+<td><code>rewrite_manifests</code></td>
+<td>Reorganize metadata entries, group by partition context, write replacement manifests</td>
+<td>Can reduce planning overhead; no payload row compaction</td>
+</tr>
+<tr>
+<td>Too much retained snapshot history</td>
+<td><code>expire_snapshots</code></td>
+<td>Apply retention, update metadata, identify files no longer referenced by retained state</td>
+<td>Reclaims eligible historical files; time travel changes</td>
+</tr>
+<tr>
+<td>Files never committed or left by failed work</td>
+<td><code>remove_orphan_files</code></td>
+<td>List candidate files and compare against reachable table references</td>
+<td>Reclaims unreferenced storage; does not improve clustering</td>
+</tr>
+<tr>
+<td>Too many old metadata JSON versions</td>
+<td>Metadata retention properties</td>
+<td>Delete obsolete metadata versions according to policy</td>
+<td>Controls metadata-file accumulation; distinct from data compaction</td>
+</tr>
+</tbody></table></div>
+<p><strong>Comet scope:</strong> the benchmark establishes acceleration for three <code>rewrite_data_files</code> shapes with the eligible native writer. The inspected test deliberately keeps position-delete-file rewriting on JVM. Metadata maintenance may execute Spark subplans, but no measured acceleration for those actions is claimed here. “All maintenance is metadata-only” and “Comet accelerates every maintenance action” are both inaccurate.</p>
+<p>Source-backed operations: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteManifestsSparkAction.java#L79">RewriteManifestsSparkAction.java:79</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/ExpireSnapshotsSparkAction.java#L1">ExpireSnapshotsSparkAction.java:1</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/DeleteOrphanFilesSparkAction.java#L83">DeleteOrphanFilesSparkAction.java:83</a>. See also the versioned <a href="https://iceberg.apache.org/docs/1.8.1/maintenance/">Iceberg 1.8.1 maintenance guide</a>.</p>
+<h2 id="2-table-health-has-several-dimensions">2. Table health has several dimensions</h2>
+<h3 id="data-file-health">Data-file health</h3>
+<p>Measure file counts, total bytes, size percentiles, small-file fraction, and those same measures <strong>per partition/spec</strong>. An average can hide thousands of tiny files alongside a few huge ones. Many tiny files add listing/metadata descriptors, footer requests, reader setup and scheduling overhead. Very large files can reduce useful concurrency or enlarge task work; Parquet splits mean file count is not an exact task count.</p>
+<p>A useful diagnostic formula is:</p>
+<pre><code>small_file_fraction = count(data files below chosen threshold) / count(data files)
+mean_file_bytes = sum(data-file bytes) / count(data files)</code></pre>
+<p>Choose the threshold relative to the workload and target size. A tiny historical partition may already be as compact as possible. Repeatedly rewriting it cannot manufacture enough rows to fill a 128 MiB file.</p>
+<h3 id="delete-health">Delete health</h3>
+<p>Track number/bytes of position and equality delete files, their applicability to scanned data, and reader delete-application cost. A raw delete-file/data-file count ratio is a pressure signal, not a percentage of rows deleted. One delete file can apply to many data files; many records can refer to the same deleted row.</p>
+<p>Distinguish these quantities:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Metric</th>
+<th>Meaning</th>
+</tr>
+</thead><tbody><tr>
+<td><code>SUM(record_count)</code> for <code>content=0</code></td>
+<td>Physical records described by current data files, before logical delete application</td>
+</tr>
+<tr>
+<td><code>SUM(record_count)</code> for <code>content=1/2</code></td>
+<td>Delete records; not necessarily distinct deleted rows</td>
+</tr>
+<tr>
+<td><code>SELECT COUNT(*) FROM table</code></td>
+<td>Visible logical rows under the snapshot&#39;s delete semantics</td>
+</tr>
+<tr>
+<td>Delete files opened / bytes read</td>
+<td>Actual reader work for a query, subject to engine metric coverage</td>
+</tr>
+</tbody></table></div>
+<p>The benchmark&#39;s 5% density is known from its deterministic generator, not inferred from the metadata file-count ratio.</p>
+<h3 id="clustering-health">Clustering health</h3>
+<p>Check whether relevant predicates overlap many file bounds and whether the reader skips files/row groups. Good sorting can tighten bounds; broader groups, wrong leading columns, truncation of string statistics or unsuitable predicates can limit the benefit. A bin-pack can even broaden per-file ranges by combining unrelated inputs. Fewer files and better pruning are different properties.</p>
+<p>Use a fixed read-query suite before and after rewriting. Include selective range/point predicates and a full-scan aggregation. Report returned results, scanned bytes, files/row groups where available, and latency. Do not substitute a rewrite speedup for a read-query speedup.</p>
+<h3 id="metadata-and-retention-health">Metadata and retention health</h3>
+<p>A current snapshot references a manifest list; manifests describe data/delete files. Rewrites create new state while older retained snapshots can keep old files reachable. Branches/tags and active readers influence safe retention. Storage can temporarily grow during a rewrite because old inputs, new outputs and shuffle/spill coexist.</p>
+<pre><code>New compacted snapshot -&gt; old snapshots still reference old files -&gt; retention permits expiration -&gt; eligible old objects removed</code></pre>
+<p>The current <code>files</code> table is not a complete inventory of retained storage. Conversely, summing file lists across every snapshot can double-count shared objects. Count distinct physical paths when measuring retained bytes.</p>
+<h2 id="3-metadata-maintenance-algorithms">3. Metadata-maintenance algorithms</h2>
+<h3 id="rewrite-manifests">Rewrite manifests</h3>
+<p>The action reads manifest entries, groups/reorders metadata around partition information, writes replacement manifests and commits the new manifest arrangement. It does not decode all payload Parquet rows or change the data files&#39; row order. It is useful when manifest fragmentation or poor metadata grouping increases planning work. Measure driver planning latency, manifests considered/read, manifest count/bytes and commit cost; a lower manifest count alone is not a measured query gain. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteManifestsSparkAction.java#L79">RewriteManifestsSparkAction.java:79</a>.</p>
+<h3 id="expire-snapshots">Expire snapshots</h3>
+<p>The algorithm identifies snapshots eligible for removal under the requested age/count and reference-retention rules, updates table metadata, then computes/deletes files no longer required by retained state. A file used by both an expired and retained snapshot must survive. It is reference-aware garbage collection, not “delete everything older than timestamp” at the object-store level. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/RemoveSnapshots.java#L1">RemoveSnapshots.java:1</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/ExpireSnapshotsSparkAction.java#L1">ExpireSnapshotsSparkAction.java:1</a>.</p>
+<p>Compaction alone does not free the old files. Snapshot expiration alone does not consolidate the current data files. They solve different problems and may be scheduled at different cadences.</p>
+<h3 id="remove-orphan-files">Remove orphan files</h3>
+<p>The action compares a storage listing or supplied file list against paths reachable through table metadata. Candidate age and location restrictions protect files that writers may still be producing. Path/scheme/authority normalization matters: mismatched path representations can make a referenced object appear unreferenced. Start with a dry run and a retention window that exceeds possible in-flight writes and recovery delays. This is part of the deletion algorithm&#39;s correctness, not a performance knob to set near zero for a demo. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/DeleteOrphanFilesSparkAction.java#L83">DeleteOrphanFilesSparkAction.java:83</a>.</p>
+<p>Orphan deletion is also different from expiring snapshots: a file can be old and still correctly referenced, or recent and not yet committed. In catalogs/tables that share files, reachability and garbage-collection policy need particular care.</p>
+<h3 id="old-metadata-json-versions">Old metadata JSON versions</h3>
+<p><code>write.metadata.delete-after-commit.enabled</code> and <code>write.metadata.previous-versions-max</code> control cleanup of previous metadata versions tracked by the table. They do not replace snapshot retention, orphan cleanup or data-file rewrite. Use the catalog/table retention contract rather than deleting metadata JSONs by filename. <a href="https://iceberg.apache.org/docs/1.8.1/maintenance/#remove-old-metadata-files">Iceberg maintenance reference</a>.</p>
+<h2 id="4-the-measured-jvm-versus-comet-result">4. The measured JVM versus Comet result</h2>
+<p><strong>Observed:</strong> local run on 2026-10-07, 5 measurements per engine/workload, medians below. This replaces the older tiny-fixture result for slides 12 and 13; the <a href="18-iceberg-tests-and-benchmark-evidence.html">earlier chapter 18 evidence</a> remains historical.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Rewrite</th>
+<th align="right">Spark JVM median</th>
+<th align="right">Comet median</th>
+<th align="right">JVM / Comet</th>
+<th>Data files, both engines</th>
+</tr>
+</thead><tbody><tr>
+<td>Bin-pack</td>
+<td align="right">3.651 s</td>
+<td align="right">1.445 s</td>
+<td align="right">2.53x</td>
+<td>256 -&gt; 10</td>
+</tr>
+<tr>
+<td>Bin-pack + position deletes</td>
+<td align="right">4.295 s</td>
+<td align="right">1.509 s</td>
+<td align="right">2.85x</td>
+<td>256 -&gt; 10</td>
+</tr>
+<tr>
+<td>Sort by customer_id, id</td>
+<td align="right">9.598 s</td>
+<td align="right">4.156 s</td>
+<td align="right">2.31x</td>
+<td>256 -&gt; 9</td>
+</tr>
+</tbody></table></div>
+<p>Ratios use unrounded medians. Fewer data files show layout improvement, while matching checks show that the visible rows were preserved. The experiment did not measure post-compaction analytical-query latency. The suite restored the original seed after each trial, so the current live tables can show 256 files again. The saved output layouts prove the 10/9-file results; for a live before/after inspection, inspect the rewritten snapshot before the harness restores it.</p>
+<p><a href="assets/compaction/compaction-16m.json">Download the complete curated evidence</a>: all timing samples, 60 correctness records, original input-manifest hashes, software binary hashes, dataset/method and six captured median-trial plans. The source run was <code>/tmp/comet-compaction-benchmark/run-20261007-16m</code>; the copy in this notebook makes the curated evidence independent of that temporary directory. Local warehouse paths in captured plans are shortened; operators are unchanged.</p>
+<h3 id="dataset-and-machine">Dataset and machine</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Item</th>
+<th>Recorded value</th>
+</tr>
+</thead><tbody><tr>
+<td>Dataset</td>
+<td>Deterministic synthetic events; not TPC-H/TPC-DS</td>
+</tr>
+<tr>
+<td>Schema</td>
+<td>id BIGINT, customer_id BIGINT, event_day DATE, amount DECIMAL(12,2), status STRING, payload STRING</td>
+</tr>
+<tr>
+<td>Input</td>
+<td>16,000,000 physical rows; 256 data files; 1,267,756,086 data bytes = 1.18 GiB</td>
+</tr>
+<tr>
+<td>Fragmentation</td>
+<td>4.72 MiB mean file size; 62,500 rows per seed file</td>
+</tr>
+<tr>
+<td>Table</td>
+<td>Unpartitioned Iceberg v2, Snappy Parquet, target 128 MiB</td>
+</tr>
+<tr>
+<td>Delete case</td>
+<td>Five MOR DELETE batches; 800,000 rows deleted; 15.2M visible rows; 256 position-delete files</td>
+</tr>
+<tr>
+<td>Machine</td>
+<td>Mac16,7, 14 logical CPUs, 48 GiB RAM, local filesystem</td>
+</tr>
+<tr>
+<td>Spark resources</td>
+<td>local[8], 4 GiB driver JVM heap, 8 GiB configured off-heap in both arms</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td>Spark 3.5.3, Iceberg 1.8.1, local Comet 1.1.0-SNAPSHOT, Java 17.0.18 (Amazon)</td>
+</tr>
+<tr>
+<td>Execution settings</td>
+<td>AQE off; SQL shuffle default 8; sort action explicitly requests 9</td>
+</tr>
+<tr>
+<td>Storage/cache</td>
+<td>Warm filesystem cache from a JVM validation scan; no Spark persisted data</td>
+</tr>
+</tbody></table></div>
+<p>The payload is a SHA-256 hex string to avoid a trivially compressible all-constant dataset. Customer IDs have one million possible values, dates span 90 days and status is null every eighth row. This is a controlled small-file workload, not evidence about production partition skew or S3 latency.</p>
+<h3 id="measurement-method">Measurement method</h3>
+<pre><code>Restore seed snapshot -&gt; verify file manifest and rows -&gt; warm-up rewrite -&gt; restore seed -&gt; measured rewrite -&gt; verify output</code></pre>
+<p>Five paired rounds alternate JVM-first and Comet-first order. Engines run in separate Spark applications, ten applications total. Each application runs bin-pack, delete-aware bin-pack and sort; each case gets a full warm-up immediately before its measured trial. There are 30 measured rewrites plus 30 warm-ups.</p>
+<p>The timer surrounds <code>spark.sql(CALL ...).collect()</code> and includes procedure planning, group execution and the final Iceberg snapshot commit. It excludes Spark startup, data preparation, validation, plan export and restoring/cleaning the trial snapshot. Validation scans warm the filesystem cache; call this a warm-cache comparison.</p>
+<p>Every run checks the original seed file-manifest hash. Before/after logical checks use row count, <code>SUM(amount)</code>, and two order-independent aggregate <code>xxhash64</code> sums over all six columns, summed as DECIMAL(38,0). All 60 matched. Aggregate hashes are strong regression checks, not a mathematical proof against every possible collision. Native output Parquet footers identify <code>Apache Iceberg 1.8.1 (Comet)</code>.</p>
+<h3 id="all-measured-timing-samples">All measured timing samples</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Case</th>
+<th>Engine</th>
+<th align="right">Round 1</th>
+<th align="right">Round 2</th>
+<th align="right">Round 3</th>
+<th align="right">Round 4</th>
+<th align="right">Round 5</th>
+</tr>
+</thead><tbody><tr>
+<td>Bin-pack</td>
+<td>JVM</td>
+<td align="right">4.079</td>
+<td align="right">3.877</td>
+<td align="right">3.615</td>
+<td align="right">3.651</td>
+<td align="right">3.574</td>
+</tr>
+<tr>
+<td>Bin-pack</td>
+<td>Comet</td>
+<td align="right">1.445</td>
+<td align="right">1.659</td>
+<td align="right">1.443</td>
+<td align="right">1.338</td>
+<td align="right">1.448</td>
+</tr>
+<tr>
+<td>With deletes</td>
+<td>JVM</td>
+<td align="right">4.438</td>
+<td align="right">4.295</td>
+<td align="right">3.982</td>
+<td align="right">4.211</td>
+<td align="right">4.600</td>
+</tr>
+<tr>
+<td>With deletes</td>
+<td>Comet</td>
+<td align="right">1.930</td>
+<td align="right">1.809</td>
+<td align="right">1.353</td>
+<td align="right">1.509</td>
+<td align="right">1.273</td>
+</tr>
+<tr>
+<td>Sort</td>
+<td>JVM</td>
+<td align="right">10.099</td>
+<td align="right">8.772</td>
+<td align="right">9.701</td>
+<td align="right">7.817</td>
+<td align="right">9.598</td>
+</tr>
+<tr>
+<td>Sort</td>
+<td>Comet</td>
+<td align="right">5.363</td>
+<td align="right">4.817</td>
+<td align="right">3.620</td>
+<td align="right">4.156</td>
+<td align="right">3.338</td>
+</tr>
+</tbody></table></div>
+<p>Five samples expose some variability; they do not establish a fleet-wide confidence interval. The two-arm result combines native scan/operator/write effects. To isolate native writer contribution, add a third arm with native child execution and a verified JVM writer.</p>
+<h2 id="5-executable-sql-for-the-benchmark-cases">5. Executable SQL for the benchmark cases</h2>
+<p>Use an isolated demo namespace. These calls rewrite the selected table&#39;s files. They are the saved benchmark procedures, not commands executed while authoring these notes. Session/JAR/catalog configuration must match the chosen engine. The live benchmark harness restored the exact seed snapshot between calls; running the following repeatedly against the already-compacted table is not an equivalent benchmark.</p>
+<h3 id="clean-bin-pack">Clean bin-pack</h3>
+<pre><code>-- Scan + write; no exchange or sort in the captured plan.
+CALL local.system.rewrite_data_files(
+  table =&gt; &#39;compaction_bench.clean&#39;,
+  strategy =&gt; &#39;binpack&#39;,
+  options =&gt; map(
+    &#39;rewrite-all&#39;, &#39;true&#39;,
+    &#39;target-file-size-bytes&#39;, &#39;134217728&#39;,
+    &#39;max-concurrent-file-group-rewrites&#39;, &#39;1&#39;,
+    &#39;partial-progress.enabled&#39;, &#39;false&#39;
+  )
+);</code></pre>
+<h3 id="bin-pack-with-position-deletes">Bin-pack with position deletes</h3>
+<pre><code>-- Scan + delete application + write; preserve the 15.2M already-visible rows.
+CALL local.system.rewrite_data_files(
+  table =&gt; &#39;compaction_bench.deletes&#39;,
+  strategy =&gt; &#39;binpack&#39;,
+  options =&gt; map(
+    &#39;rewrite-all&#39;, &#39;true&#39;,
+    &#39;target-file-size-bytes&#39;, &#39;134217728&#39;,
+    &#39;max-concurrent-file-group-rewrites&#39;, &#39;1&#39;,
+    &#39;partial-progress.enabled&#39;, &#39;false&#39;
+  )
+);</code></pre>
+<h3 id="sort-compaction">Sort compaction</h3>
+<pre><code>-- Scan + range exchange + sort + write.
+CALL local.system.rewrite_data_files(
+  table =&gt; &#39;compaction_bench.clean&#39;,
+  strategy =&gt; &#39;sort&#39;,
+  sort_order =&gt; &#39;customer_id ASC NULLS FIRST, id ASC NULLS FIRST&#39;,
+  options =&gt; map(
+    &#39;rewrite-all&#39;, &#39;true&#39;,
+    &#39;target-file-size-bytes&#39;, &#39;134217728&#39;,
+    &#39;max-concurrent-file-group-rewrites&#39;, &#39;1&#39;,
+    &#39;partial-progress.enabled&#39;, &#39;false&#39;
+  )
+);</code></pre>
+<p><a href="assets/compaction/binpack.sql">Saved bin-pack SQL</a>, <a href="assets/compaction/binpack_deletes.sql">delete-aware SQL</a>, <a href="assets/compaction/sort.sql">sort SQL</a>. A selective <code>where</code> can restrict production maintenance to candidate files in colder partitions. It does not filter away nonmatching rows inside selected files; see chapter 21.</p>
+<h2 id="6-how-the-dataset-was-fragmented">6. How the dataset was fragmented</h2>
+<p>The following is a standalone clean-table seed example matching the generator and table properties. Use a fresh namespace/table for each new fixture; it is not an instruction to overwrite an existing table.</p>
+<pre><code>CREATE NAMESPACE IF NOT EXISTS local.compaction_bench;
+
+CREATE TABLE local.compaction_bench.clean (
+  id BIGINT,
+  customer_id BIGINT,
+  event_day DATE,
+  amount DECIMAL(12,2),
+  status STRING,
+  payload STRING
+) USING iceberg
+TBLPROPERTIES (
+  &#39;format-version&#39; = &#39;2&#39;,
+  &#39;write.delete.mode&#39; = &#39;merge-on-read&#39;,
+  &#39;write.distribution-mode&#39; = &#39;none&#39;,
+  &#39;write.target-file-size-bytes&#39; = &#39;134217728&#39;,
+  &#39;write.parquet.compression-codec&#39; = &#39;snappy&#39;
+);
+
+INSERT INTO local.compaction_bench.clean
+SELECT id,
+  pmod(xxhash64(id), 1000000),
+  date_add(DATE &#39;2025-01-01&#39;, cast(pmod(id,90) AS int)),
+  cast(pmod(id*37,100000)/100.0 AS decimal(12,2)),
+  CASE WHEN pmod(id,8)=0 THEN NULL
+    ELSE concat(&#39;status_&#39;, cast(pmod(id,5) AS string)) END,
+  sha2(cast(id AS string),256)
+FROM range(0,16000000,1,256);</code></pre>
+<p>For the delete fixture, create another table named <code>deletes</code> with the same schema/properties and run the same generator into it. Then execute five separate DELETE statements, with predicates <code>pmod(id,100)=0</code>, <code>=1</code>, <code>=2</code>, <code>=3</code>, <code>=4</code>. Five statements reproduce the mutation pattern; a single <code>IN</code> predicate has equivalent visible rows but need not produce the same delete-file layout. Inspect the resulting <code>files</code> table rather than assuming “five batches means 5 x 256 delete files.” The observed seed has 256 position-delete files.</p>
+<p>The <code>range</code> has 256 input partitions and distribution is disabled for seeding. The resulting fragmentation was verified through metadata; input partition count alone does not universally guarantee a file count under every writer, AQE configuration or dataset size.</p>
+<h2 id="7-read-only-health-sql">7. Read-only health SQL</h2>
+<p>These are Spark SQL inspection queries for the example Iceberg catalog/table. Change the identifier for a partitioned production table. No cleanup is performed.</p>
+<pre><code>-- Current file counts and sizes. content: 0=data, 1=position delete, 2=equality delete.
+SELECT content,
+       count(*) AS files,
+       sum(record_count) AS physical_records,
+       round(sum(file_size_in_bytes) / 1048576.0, 2) AS total_mib,
+       round(avg(file_size_in_bytes) / 1048576.0, 2) AS mean_mib,
+       round(min(file_size_in_bytes) / 1048576.0, 2) AS min_mib,
+       round(max(file_size_in_bytes) / 1048576.0, 2) AS max_mib
+FROM local.compaction_bench.clean.files
+GROUP BY content
+ORDER BY content;
+
+-- Distribution matters more than an average alone.
+SELECT percentile_approx(file_size_in_bytes, array(0.1, 0.5, 0.9)) AS size_percentiles,
+       sum(CASE WHEN file_size_in_bytes &lt; 100663296 THEN 1 ELSE 0 END) AS below_96mib,
+       count(*) AS data_files
+FROM local.compaction_bench.clean.files
+WHERE content = 0;
+
+-- For a partitioned table, find partitions/specs with many small files.
+SELECT spec_id, partition, count(*) AS data_files,
+       round(sum(file_size_in_bytes) / 1048576.0, 2) AS total_mib
+FROM local.compaction_bench.clean.files
+WHERE content = 0
+GROUP BY spec_id, partition
+ORDER BY data_files DESC;
+
+-- Logical validation; SUM(record_count) above is not a substitute with deletes.
+SELECT count(*) AS visible_rows, sum(amount) AS amount_sum,
+       sum(cast(xxhash64(id, customer_id, event_day, amount, status, payload)
+                AS decimal(38,0))) AS hash1,
+       sum(cast(xxhash64(&#39;second-seed&#39;, id, customer_id, event_day, amount, status, payload)
+                AS decimal(38,0))) AS hash2
+FROM local.compaction_bench.clean;
+
+-- Snapshot operations and summary counts.
+SELECT committed_at, snapshot_id, parent_id, operation,
+       summary[&#39;added-data-files&#39;] AS added_files,
+       summary[&#39;deleted-data-files&#39;] AS removed_files,
+       summary[&#39;total-data-files&#39;] AS total_files
+FROM local.compaction_bench.clean.snapshots
+ORDER BY committed_at DESC;
+
+-- Current manifest sizes and table references.
+SELECT count(*) AS manifests, sum(length) AS manifest_bytes
+FROM local.compaction_bench.clean.manifests;
+SELECT name, type, snapshot_id FROM local.compaction_bench.clean.refs;</code></pre>
+<p>Run the same file/row checks against <code>deletes</code>. Metadata-table scans use their own execution paths; these diagnostic query timings are not the compaction timings. File bounds in metadata are keyed by Iceberg field IDs and often encoded as binary values; decode them with Iceberg&#39;s schema/type-aware utilities before comparing actual values.</p>
+<p>For future-read measurement, use stable predicates on <code>customer_id</code>, a date range and a full-scan aggregation. Preserve identical logical data and query results, cache policy, runtime settings and selected snapshot. The clean and delete fixtures have different visible rows, so they are not interchangeable baselines for a read-latency comparison.</p>
+<h2 id="8-other-maintenance-sql-shapes">8. Other maintenance SQL shapes</h2>
+<p>These are learning examples, <strong>not measured native Comet results</strong>. Apply them only to the intended lab table. Exact accepted arguments are version-dependent; the <a href="https://iceberg.apache.org/docs/1.8.1/spark-procedures/">Iceberg 1.8.1 procedure reference</a> is the companion reference.</p>
+<pre><code>-- Consolidate position-delete files, not the ordinary data payload.
+CALL local.system.rewrite_position_delete_files(
+  table =&gt; &#39;compaction_bench.deletes&#39;,
+  options =&gt; map(&#39;rewrite-all&#39;, &#39;true&#39;)
+);
+
+-- Reorganize manifest metadata; leaves data-file rows/layout unchanged.
+CALL local.system.rewrite_manifests(table =&gt; &#39;compaction_bench.clean&#39;);
+
+-- Inspect orphan candidates first; this example does not delete them.
+CALL local.system.remove_orphan_files(
+  table =&gt; &#39;compaction_bench.clean&#39;,
+  dry_run =&gt; true
+);</code></pre>
+<p>Snapshot expiration is intentionally shown as a template because its cutoff and retained count are table-policy decisions:</p>
+<pre><code>-- Replace placeholders only after choosing retention for readers, recovery and references.
+CALL local.system.expire_snapshots(
+  table =&gt; &#39;compaction_bench.clean&#39;,
+  older_than =&gt; TIMESTAMP &#39;&lt;approved retention cutoff&gt;&#39;,
+  retain_last =&gt; &lt;minimum snapshots to retain&gt;
+);</code></pre>
+<p>Do not use that template during the paired benchmark: the seed snapshot is needed for restoring identical inputs. The original harness expired only its own newly created trial snapshots after saving evidence and rolling back in its isolated warehouse.</p>
+<h2 id="9-read-the-internal-plans-in-spark-history">9. Read the internal plans in Spark History</h2>
+<p>The saved operator trees, simplified for teaching, read from left to right as data flow:</p>
+<pre><code>JVM bin-pack: BatchScan -&gt; ColumnarToRow -&gt; AppendData
+Comet bin-pack: CometIcebergNativeScan -&gt; CometIcebergWrite -&gt; IcebergCommit
+JVM sort: BatchScan -&gt; ColumnarToRow -&gt; Exchange(range, 9) -&gt; Sort -&gt; AppendData
+Comet sort: CometIcebergNativeScan -&gt; CometExchange(range, 9) -&gt; CometSort -&gt; CometIcebergWrite -&gt; IcebergCommit</code></pre>
+<p><code>AppendData</code> and <code>IcebergCommit</code> in the internal group plan hand results to the rewrite coordinator. The <strong>outer action</strong> then performs the replacement snapshot commit. This explains why the group SQL execution duration and full procedure duration differ.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Case</th>
+<th>Saved JVM plan</th>
+<th>Saved Comet plan</th>
+</tr>
+</thead><tbody><tr>
+<td>Bin-pack</td>
+<td><a href="assets/compaction/jvm-binpack.plan.txt">round 4, SQL 12</a></td>
+<td><a href="assets/compaction/comet-binpack.plan.txt">round 1, SQL 12</a></td>
+</tr>
+<tr>
+<td>With deletes</td>
+<td><a href="assets/compaction/jvm-binpack_deletes.plan.txt">round 2, SQL 30</a></td>
+<td><a href="assets/compaction/comet-binpack_deletes.plan.txt">round 4, SQL 30</a></td>
+</tr>
+<tr>
+<td>Sort</td>
+<td><a href="assets/compaction/jvm-sort.plan.txt">round 5, SQL 48</a></td>
+<td><a href="assets/compaction/comet-sort.plan.txt">round 4, SQL 48</a></td>
+</tr>
+</tbody></table></div>
+<p>These are each engine&#39;s median trial, not necessarily a matched round. The evidence JSON retains all timing samples and the original execution/app IDs.</p>
+<p>For the original local event logs, open <a href="http://localhost:18081/history/local-1791383099643/SQL/execution/?id=48">JVM sort in History</a> and <a href="http://localhost:18081/history/local-1791382996923/SQL/execution/?id=48">Comet sort in History</a>. Local links require the matching History Server and event logs; the saved plan files above remain readable without it.</p>
+<h3 id="which-ui-numbers-to-discuss">Which UI numbers to discuss</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Evidence</th>
+<th>What it answers</th>
+<th>Interpretation limit</th>
+</tr>
+</thead><tbody><tr>
+<td>Internal physical plan</td>
+<td>Did the scan/sort/exchange/writer actually become native?</td>
+<td>Outer CALL alone is insufficient</td>
+</tr>
+<tr>
+<td>Jobs/stages and task count</td>
+<td>Was there shuffle? How much parallelism and skew?</td>
+<td>Group count, stage count, task count and output count differ</td>
+</tr>
+<tr>
+<td>Shuffle read/write and spill</td>
+<td>What redistribution/sort pressure occurred?</td>
+<td>Encodings and metric coverage can differ between engines</td>
+</tr>
+<tr>
+<td>Task duration distribution</td>
+<td>Was the tail dominated by a few tasks?</td>
+<td>Scheduler/GC/I/O/CPU are mixed in elapsed time</td>
+</tr>
+<tr>
+<td>Driver planning/commit and full CALL timer</td>
+<td>How much work remained outside the native group?</td>
+<td>Operator timers overlap and do not sum cleanly to wall time</td>
+</tr>
+<tr>
+<td>Parquet footer writer identity</td>
+<td>Was file production native?</td>
+<td>Doesn&#39;t establish correctness or speed by itself</td>
+</tr>
+<tr>
+<td>Visible-row checks and file metadata</td>
+<td>Was logical content preserved and layout improved?</td>
+<td>Does not measure future query speed</td>
+</tr>
+</tbody></table></div>
+<p>Spark task-thread CPU counters can miss native worker-thread CPU. Do not derive CPU-cost savings from that counter alone. Neither native scan elapsed-compute nor individual write timers should be presented as a complete additive decomposition of the procedure.</p>
+<h2 id="10-an-engaging-five-minute-demo">10. An engaging five-minute demo</h2>
+<pre><code>Show table problem -&gt; run baseline -&gt; inspect its internal plan -&gt; restore identical input -&gt; run Comet -&gt; compare evidence</code></pre>
+<ol>
+<li><strong>Problem:</strong> show 256 files totaling only 1.18 GiB. Explain that query planning and file-open work can become disproportionate. State that this is a controlled local fixture.</li>
+<li><strong>Baseline:</strong> run one clean bin-pack call in a JVM application. In SQL History show the staged scan, row boundary and JVM writer. Record full CALL time and output file count.</li>
+<li><strong>Comet:</strong> restore the exact original seed through the isolated benchmark harness, then run in the separate Comet application. Show <code>CometIcebergNativeScan</code> and <code>CometIcebergWrite</code>, plus the file-footer identity.</li>
+<li><strong>Same job:</strong> both outputs have 10 data files and matching logical checks. Comet reduces execution time; it does not get credit for a different compaction policy or reduced input.</li>
+<li><strong>More work:</strong> show the saved sort comparison. The exchange and sort are visible in both arms; Comet substitutes native operators. Finish with the medians across all five rounds, not a lucky live run.</li>
+</ol>
+<p>For the delete case, ask: “There are 16M physical records but only 15.2M visible rows. What should compaction write?” The answer is the same 15.2M survivors. Then show why the current delete-file count can remain 256 without invalidating that result.</p>
+<p>The presentation&#39;s slides 12 and 13 bundle full SQL, both plans, dataset/machine/method and evidence download. Use the notebook when the audience asks how the algorithms or commit boundary work.</p>
+<h2 id="11-choosing-what-to-optimize-next">11. Choosing what to optimize next</h2>
+<p>The expensive part depends on the observed bottleneck:</p>
+<pre><code>Many opens / short tasks -&gt; fix ingestion file sizing or bin-pack
+High delete read/reconciliation cost -&gt; rewrite affected data or compact position deletes
+Poor pruning -&gt; choose and validate a useful sort/Z-order layout
+Slow planning -&gt; inspect manifests and snapshot metadata
+Growing retained storage -&gt; inspect snapshot/reference policy and orphan candidates</code></pre>
+<p>A lower-cost rewrite makes more frequent maintenance feasible, but rewriting too often can waste resources and conflict with active mutations. Prefer measured thresholds and cold/settled partitions when appropriate. Scheduler policy is separate from engine acceleration.</p>
+<p>A simple planning estimate is:</p>
+<pre><code>maintenance benefit ~= future query count * average query saving - rewrite cost</code></pre>
+<p>Use consistent units (seconds of resource use or money). This is an engineering estimate, not measured ROI. Include recurring rewrite cost, object requests, shuffle/spill, temporary disk headroom and conflict/retry rates. A wall-time ratio alone is not a cloud-cost ratio.</p>
+<h3 id="next-benchmark-dimensions">Next benchmark dimensions</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Experiment</th>
+<th>Why it matters</th>
+<th>What remains unmeasured here</th>
+</tr>
+</thead><tbody><tr>
+<td>JVM / native child + JVM writer / full native</td>
+<td>Separates read/operator gains from native file-production gains</td>
+<td>Current result has only two arms</td>
+</tr>
+<tr>
+<td>Larger data and real partition skew</td>
+<td>Exposes memory, parallelism and stragglers</td>
+<td>Current fixture is 1.18 GiB and unpartitioned</td>
+</tr>
+<tr>
+<td>Remote object storage and controlled cache</td>
+<td>Separates request/latency effects from local compute</td>
+<td>Current result is local and warm-cache</td>
+</tr>
+<tr>
+<td>Equality deletes / mixed delete density</td>
+<td>Exercises a different reconciliation path</td>
+<td>Runtime result covers position deletes only</td>
+</tr>
+<tr>
+<td>Multicolumn Z-order</td>
+<td>Tests conversion and multidimensional pruning</td>
+<td>Only single-column native test coverage inspected</td>
+</tr>
+<tr>
+<td>Fixed reads before/after each layout</td>
+<td>Quantifies future table-health benefit</td>
+<td>No post-compaction read speedup recorded</td>
+</tr>
+<tr>
+<td>Concurrent ingestion + maintenance</td>
+<td>Measures conflicts and backlog</td>
+<td>Current paired benchmark is isolated</td>
+</tr>
+</tbody></table></div>
+<h2 id="12-presenter-answers-to-common-questions">12. Presenter answers to common questions</h2>
+<p><strong>Does Comet fully write Iceberg?</strong> It can produce eligible Parquet data files natively, including encoding and compression. Iceberg Java still rebuilds compatible metadata/commit messages and owns final table publication. This is not universal support for every Iceberg format, write mode, property or maintenance action.</p>
+<p><strong>Why didn&#39;t Comet reduce the file count further?</strong> It executes Iceberg&#39;s chosen policy and Spark partitions. The benchmark produces the same output counts in both arms; speed is the comparison.</p>
+<p><strong>Are 10 files always healthier than 256?</strong> For this small-file fixture the consolidation target is intentional. For another table, partition boundaries, read selectivity and desired concurrency can change the optimum. Validate actual read behavior.</p>
+<p><strong>Is sorting better than bin-pack?</strong> It buys locality at additional shuffle/sort cost. It is useful only if future predicates and pruning benefit enough. The measured sorting job is slower in absolute time than bin-pack on both engines.</p>
+<p><strong>Does 256 -&gt; 10 mean 25.6x less storage?</strong> No. It means 25.6x fewer current data files. Most live rows remain; compressed bytes need not shrink materially. Retained older snapshots can still occupy storage.</p>
+<p><strong>Does applying deletes remove all delete files?</strong> No. Row visibility, current delete references and retained physical delete objects are separate concerns. The captured delete case preserves visible rows and leaves 256 position-delete files referenced.</p>
+<p><strong>Can EXPLAIN CALL prove acceleration?</strong> Usually the outer procedure plan is not enough. Inspect the internal per-group Spark SQL execution and captured plan. Plan-only inspection is useful for eligible query plans but does not replace executed-plan and file-output evidence for this maintenance demo.</p>
+<p><strong>What exactly improved in this experiment?</strong> End-to-end rewrite wall time for the same seed file layout, with matching logical checks and verified native file output. The result does not isolate scan versus writer gains, establish production cost savings or measure subsequent reads.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="21-compaction-algorithms-and-execution.html"><small>Previous</small>Compaction algorithms and code</a><a href="23-comet-sort-sql-to-rust.html"><small>Next</small>CometSort: SQL to Rust</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

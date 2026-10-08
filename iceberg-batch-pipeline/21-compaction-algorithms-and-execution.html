@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Compaction algorithms and execution internals | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
+<li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html" aria-current="page"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="21-compaction-algorithms-and-execution.md">Markdown source</a></header><article><h1 id="compaction-algorithms-and-execution-internals">Compaction algorithms and execution internals</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#the-ownership-model">The ownership model</a></li>
+<li><a href="#1-what-compaction-really-rewrites">1. What compaction really rewrites</a></li>
+<li><a href="#2-iceberg-java-from-call-to-candidate-groups">2. Iceberg Java: from CALL to candidate groups</a></li>
+<li><a href="#3-bin-pack-algorithm">3. Bin-pack algorithm</a></li>
+<li><a href="#4-sort-compaction-algorithm">4. Sort compaction algorithm</a></li>
+<li><a href="#5-z-order-algorithm">5. Z-order algorithm</a></li>
+<li><a href="#6-delete-aware-data-rewrite-versus-delete-file-rewrite">6. Delete-aware data rewrite versus delete-file rewrite</a></li>
+<li><a href="#7-spark-jvm-the-actual-write-protocol">7. Spark JVM: the actual write protocol</a></li>
+<li><a href="#8-comet-planning-split-eligibility-native-execution">8. Comet planning: split, eligibility, native execution</a></li>
+<li><a href="#9-comet-rust-scan-exchange-sort-and-real-parquet-bytes">9. Comet Rust: scan, exchange, sort and real Parquet bytes</a></li>
+<li><a href="#10-atomicity-conflicts-and-cleanup">10. Atomicity, conflicts and cleanup</a></li>
+<li><a href="#11-code-reading-and-test-map">11. Code-reading and test map</a></li></ul></nav></details>
+<p>Iceberg chooses the files and publishes the replacement table state. Spark plans and schedules the distributed work. Comet can replace the eligible scan, shuffle, sort and Parquet writer inside that work. The compaction policy remains Iceberg&#39;s.</p>
+<p>Read this chapter for the algorithms and code. Continue with <a href="22-table-health-and-compaction-benchmark.html">table health and the benchmark lab</a> for inspection SQL, measurements, maintenance decisions and a demo sequence. For the complete SQL-to-Rust sorting path, see <a href="23-comet-sort-sql-to-rust.html">CometSort internals</a>. These chapters add the October 7 benchmark to the earlier <a href="17-distributed-iceberg-and-compaction.html">distributed compaction notes</a>.</p>
+<h2 id="the-ownership-model">The ownership model</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Question</th>
+<th>Owner</th>
+<th>Important consequence</th>
+</tr>
+</thead><tbody><tr>
+<td>Which snapshot and files are candidates?</td>
+<td>Iceberg Java scan and rewrite action</td>
+<td>File pruning, partition specs and delete applicability precede native execution</td>
+</tr>
+<tr>
+<td>Which files belong in a rewrite group?</td>
+<td>Iceberg size-based rewriter</td>
+<td>Comet does not invent a different bin-packing policy</td>
+</tr>
+<tr>
+<td>How many tasks, exchanges and attempts execute?</td>
+<td>Spark with Iceberg&#39;s distribution requirements</td>
+<td>One rewrite group can use many Spark tasks</td>
+</tr>
+<tr>
+<td>Who reads/deletes/sorts rows?</td>
+<td>JVM operators or eligible Comet operators</td>
+<td>The physical plan establishes which path actually ran</td>
+</tr>
+<tr>
+<td>Who encodes replacement Parquet?</td>
+<td>Iceberg Java/parquet-mr, or Comet/iceberg-rust/parquet-rs</td>
+<td>Native write means actual file production in Rust</td>
+</tr>
+<tr>
+<td>Who publishes the new snapshot?</td>
+<td>Iceberg Java through the catalog/TableOperations contract</td>
+<td>Native file creation does not replace transaction semantics</td>
+</tr>
+</tbody></table></div>
+<pre><code>Action: SQL CALL -&gt; Iceberg file selection -&gt; rewrite groups -&gt; Spark jobs -&gt; Iceberg replacement commit
+JVM data: staged scan -&gt; JVM rows/operators -&gt; Iceberg Java writer -&gt; task commit messages
+Comet data: native scan -&gt; optional native exchange/sort -&gt; native Parquet write -&gt; JVM task commit messages</code></pre>
+<p><strong>Source scope, checked 2026-10-08:</strong> Iceberg algorithm references below are pinned to the <code>apache-iceberg-1.8.1</code> tag (<code>aef7c249e077ee8cd64489fe0aa6fd52227647bd</code>), matching the runtime JAR version. Spark write protocol references use <code>v3.5.3</code>. Comet references use the local checkout at <code>184accac5b9cee6b761a6673c73c263adedef45e</code>, with existing local scan changes. Its Cargo manifest pins iceberg-rust <code>bb1e4a4861f02377489eff818b75138f414c4cb0</code>; dependency details were checked in that Cargo checkout. The separate Iceberg HEAD <code>c24eeea0b11a373c81a8cc9c8517df9a6ea84a6e</code> has newer planner/runner names. Do not use that HEAD&#39;s class names as the 1.8.1 call graph. JAR hashes in chapter 22 identify measured binaries; the working Git revision alone does not prove their exact source.</p>
+<p>No engine tests or benchmark jobs were rerun while writing these chapters. Test references below describe inspected assertions, not new passing test results.</p>
+<h2 id="1-what-compaction-really-rewrites">1. What compaction really rewrites</h2>
+<p>A Parquet data file is immutable. A data compaction reads selected files, reconstructs their visible rows, and writes new files. It is not normally byte-concatenation of <code>.parquet</code> objects: each file has its own footer, row groups, encoding choices and statistics. Applying deletes or changing row order also requires interpreting the records.</p>
+<p>There are three different sizes to keep separate:</p>
+<ul>
+<li><strong>Compressed file bytes:</strong> what Iceberg uses for much of the rewrite planning and file-size policy.</li>
+<li><strong>Decoded rows / Arrow batches / sort state:</strong> what consumes task memory. A 128 MiB Parquet file can decode to much more than 128 MiB.</li>
+<li><strong>Replacement compressed bytes:</strong> depend on surviving rows, ordering, encoding, codec and writer behavior. They need not equal input bytes or match between engines.</li>
+</ul>
+<p>A rewrite normally preserves the logical table rows at its valid commit point. A delete-aware rewrite may write fewer <em>physical</em> records because the old snapshot already hid some records through delete files. That is not a new logical DELETE.</p>
+<h2 id="2-iceberg-java-from-call-to-candidate-groups">2. Iceberg Java: from CALL to candidate groups</h2>
+<pre><code>RewriteDataFilesProcedure.call -&gt; SparkActions.rewriteDataFiles -&gt; RewriteDataFilesSparkAction.execute
+Snapshot scan -&gt; filter candidate files -&gt; group by partition -&gt; plan bounded file groups -&gt; execute groups</code></pre>
+<p><code>RewriteDataFilesProcedure.call</code> parses the table, strategy, sort order, <code>where</code> expression and option map, then invokes the action. <code>execute</code> captures the starting snapshot, initializes options and chooses bin-pack if no strategy is supplied. An empty table or no eligible group returns without rewriting data. Sources: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/procedures/RewriteDataFilesProcedure.java#L102">RewriteDataFilesProcedure.java:102</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java#L159">RewriteDataFilesSparkAction.java:159</a>.</p>
+<p>The action calls <code>newScan().useSnapshot(...).filter(...).ignoreResiduals().planFiles()</code>. This is a crucial distinction: <code>where</code> restricts <strong>which files can be selected</strong>, not which rows of a selected file should survive compaction. Residual row filtering is intentionally ignored. Otherwise a maintenance call such as <code>where =&gt; &#39;customer_id &lt; 100&#39;</code> could silently discard other rows from the same selected file.</p>
+<p>The action groups tasks by the current partition tuple. Files whose spec differs from the current table spec are grouped specially because their contents may span multiple output partitions. The output writer must still respect the chosen output spec. It does not simply merge unrelated partition values into one ordinary partitioned data file. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java#L201">RewriteDataFilesSparkAction.java:201</a>.</p>
+<h3 id="candidate-file-and-group-selection">Candidate file and group selection</h3>
+<p>The following is teaching pseudocode for the 1.8.1 implementation:</p>
+<pre><code>candidate(file) = rewrite_all
+                 OR file.size &lt; min_size
+                 OR file.size &gt; max_size
+                 OR applicable_delete_file_count &gt;= delete_file_threshold
+                 OR known_file_scoped_delete_ratio &gt;= delete_ratio_threshold
+
+groups = pack(candidate_files_per_partition, max_file_group_size)
+
+rewrite(group) = rewrite_all
+                OR (group.count &gt; 1 AND group.count &gt;= min_input_files)
+                OR (group.count &gt; 1 AND group.bytes &gt; target_size)
+                OR group.bytes &gt; max_size
+                OR any file passes a delete threshold</code></pre>
+<p>Defaults in this version: minimum size <code>0.75 * target</code>, maximum candidate size <code>1.80 * target</code>, minimum input count <code>5</code>, maximum group bytes <code>100 GiB</code>, delete-file-count threshold <code>Integer.MAX_VALUE</code>, delete-ratio threshold <code>0.3</code>. The target comes from the action option or table write target. These are policy defaults, not universal recommended values. Sources: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewriter.java#L54">SizeBasedFileRewriter.java:54</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/SizeBasedDataRewriter.java#L107">SizeBasedDataRewriter.java:107</a>.</p>
+<p>The delete ratio is an estimate from <strong>file-scoped</strong> delete-file record counts, capped at the data file&#39;s record count. It is not <code>SUM(all delete records) / SUM(all data records)</code> and is not a distinct deleted-row count. Duplicate positions and equality deletes make simplistic global ratios misleading. Our benchmark uses <code>rewrite-all=true</code>, so it bypasses these eligibility thresholds; its 5% deletion density does not mean the default 30% threshold triggered the run.</p>
+<h3 id="there-are-two-levels-of-packing">There are two levels of packing</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Level</th>
+<th>Unit</th>
+<th>Purpose</th>
+</tr>
+</thead><tbody><tr>
+<td>Rewrite group</td>
+<td>Collection of candidate file tasks within a partition/spec context</td>
+<td>Bound work per group, scheduling concurrency and commit units</td>
+</tr>
+<tr>
+<td>Spark scan task group</td>
+<td>File/split tasks assigned to one Spark input partition</td>
+<td>Set per-task read work and influence output file sizes</td>
+</tr>
+</tbody></table></div>
+<p><code>SizeBasedFileRewriter.planFileGroups</code> uses <code>BinPacking.ListPacker(maxGroupSize, 1, false)</code>. <code>BinPacking</code> is a bounded-lookback greedy fit: find an open bin that can accept the weight; otherwise create one and emit an older/largest bin according to policy. It is not an optimal bin-packing solver, and <code>largestBinFirst</code> chooses a bin to emit rather than sorting all input files into decreasing-size order. Later scan-task packing has its own lookback and weighting. Sources: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewriter.java#L167">SizeBasedFileRewriter.java:167</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/util/BinPacking.java#L95">BinPacking.java:95</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/util/TableScanUtil.java#L100">TableScanUtil.java:100</a>.</p>
+<h2 id="3-bin-pack-algorithm">3. Bin-pack algorithm</h2>
+<p><strong>Intent:</strong> reduce wrongly sized files with little ordering work.</p>
+<pre><code>Selected file group -&gt; pack scan tasks near a split target -&gt; read visible rows -&gt; write larger files</code></pre>
+<p><code>SparkBinPackDataRewriter</code> sets <code>SCAN_TASK_SET_ID</code>, a computed <code>SPLIT_SIZE</code>, and <code>FILE_OPEN_COST=0</code> on the read. The write receives the rewrite group ID, an enlarged writer size target, the output spec and a distribution mode. Normal same-spec compaction requests <code>NONE</code>; a spec change can require <code>RANGE</code> distribution. Therefore, “bin-pack never shuffles” is too broad. Our unpartitioned benchmark&#39;s captured bin-pack plans contain no exchange or sort. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkBinPackDataRewriter.java#L43">SparkBinPackDataRewriter.java:43</a>.</p>
+<p>Data files smaller than a split remain whole units in this workload. Larger splittable files can produce scan splits; Parquet row-group ownership determines which rows each split actually reads. “A task equals exactly one file” is not a general Spark/Iceberg rule.</p>
+<h3 id="output-count-and-size-heuristics">Output-count and size heuristics</h3>
+<p>Let <code>S</code> be group input bytes and <code>T</code> the target file bytes. For the default thresholds:</p>
+<pre><code>minimum candidate size = 0.75 * T
+maximum candidate size = 1.80 * T
+writer size target     = T + 0.5 * (maximum candidate size - T) = 1.40 * T
+
+if S &lt; T: estimated outputs = 1
+otherwise:
+  up   = ceil(S / T)
+  down = floor(S / T)
+  if remainder(S, T) &gt; minimum candidate size: use up
+  else if S / down &lt; min(1.1 * T, writer size target): use down
+  else: use up
+
+split target = clamp(S / estimated_outputs + 5 KiB, T, writer size target)</code></pre>
+<p>This avoids intentionally producing a tiny tail file when spreading the remainder across other files would keep them near target. The estimate is based on input compressed bytes, not a precise prediction of future compressed size. <code>TARGET_FILE_SIZE_BYTES</code> passed to the per-group writer can therefore exceed the user-facing compaction target. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/SizeBasedFileRewriter.java#L186">SizeBasedFileRewriter.java:186</a>.</p>
+<h3 id="why-our-run-produced-10-files-not-9">Why our run produced 10 files, not 9</h3>
+<p>Observed input: <code>1,267,756,086 bytes / 256 files = 4.72 MiB per file</code>, with <code>T = 128 MiB</code>.</p>
+<pre><code>Input = 1209.03 MiB -&gt; estimate 9 output files -&gt; split target about 134.34 MiB
+Whole small input files -&gt; 28 files per full bin -&gt; 9 full bins + 4-file tail -&gt; 10 tasks/files</code></pre>
+<p>The source formula explains why <strong>9 is the desired estimate</strong>. Discrete file packing explains why the actual bin-pack plan uses <strong>10</strong> tasks. Recorded output counts and row counts confirm 9 large files plus one small tail in the clean bin-pack case. With 62,500 rows per seed file, a 28-file group contains 1,750,000 rows and the four-file tail contains 250,000. This is a run-specific explanation, not a promised output count.</p>
+<p>Comet changes execution within those tasks. It does not make the original 256 seed files pack more tightly through a different policy.</p>
+<h2 id="4-sort-compaction-algorithm">4. Sort compaction algorithm</h2>
+<p><strong>Intent:</strong> consolidate files and improve locality for useful predicates.</p>
+<pre><code>Read selected rows -&gt; choose range boundaries -&gt; range shuffle -&gt; sort each range -&gt; write ordered files</code></pre>
+<p><code>SparkShufflingDataRewriter</code> computes an output count from <code>inputSize * compression-factor</code>, then requests ordered distribution and a specific number of shuffle partitions. <code>shuffle-partitions-per-file</code> can subdivide work; when greater than one, an order-aware coalescer combines adjacent sorted partitions. <code>SparkSortDataRewriter</code> supplies the chosen sort order. The write disables applying table distribution/order requirements again because the action has already prepared them. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkShufflingDataRewriter.java#L123">SparkShufflingDataRewriter.java:123</a>.</p>
+<p>Spark range partitioning samples ordering keys to choose boundaries; it does not promise equal compressed bytes per partition. Sorting is per range/rewrite group. Multiple independent groups can retain overlapping key ranges, so this does not create one globally perfect index for the whole table. Iceberg can also add partition requirements when rewriting across spec changes. <a href="https://github.com/apache/spark/blob/v3.5.3/sql/core/src/main/scala/org/apache/spark/sql/execution/exchange/ShuffleExchangeExec.scala">Spark 3.5.3 range exchange</a>, <a href="https://github.com/apache/spark/blob/v3.5.3/core/src/main/scala/org/apache/spark/Partitioner.scala">RangePartitioner</a>.</p>
+<p>For the measured sort order <code>(customer_id, id)</code>, the action requests <strong>9</strong> ranges. Rows can cross old file boundaries during the exchange; they are not constrained to a 28-file whole-input bin. Both engines produced 9 output files. The recorded <code>spark.sql.shuffle.partitions=8</code> is only the session default: the action&#39;s explicit 9 is visible in both captured plans.</p>
+<h3 id="lexicographic-order-and-pruning">Lexicographic order and pruning</h3>
+<p>With <code>(customer_id, id)</code>, customer ID is the leading key. Rows for nearby customer IDs tend to occupy nearby regions, which can tighten file and row-group min/max bounds. <code>id</code> is ordered within equal customer IDs; it does not get equally strong independent clustering across all customers.</p>
+<p>Benefits depend on filter columns, selectivity, groups, statistics modes and the reader. Costs include reading and writing the full selected data, key comparison, range sampling, shuffle serialization/network and possible spills. Even native sort still needs memory and can spill. A faster sort rewrite is separate from a measured improvement in future queries.</p>
+<h2 id="5-z-order-algorithm">5. Z-order algorithm</h2>
+<p><strong>Intent:</strong> trade a single leading sort key for multidimensional locality.</p>
+<pre><code>Project selected values -&gt; order-preserving bytes -&gt; interleave bits -&gt; sort by derived Z value -&gt; drop temporary column -&gt; write</code></pre>
+<p>For a tiny illustrative two-bit example, <code>x=10</code>, <code>y=01</code> interleave as <code>x1 y1 x0 y0 = 1001</code>. Nearby points often land near each other along the Z curve, but proximity is not perfect and a rectangular predicate can cover multiple disjoint intervals.</p>
+<p>Iceberg builds a temporary Z value, applies the same shuffling/sorting machinery, then drops the temporary column. Type conversion, variable-length contribution and maximum interleaved size affect the key. This is not a separate lookup index, does not replace table partitioning, and does not guarantee better pruning for every predicate. Sources: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkZOrderDataRewriter.java#L128">SparkZOrderDataRewriter.java:128</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/util/ZOrderByteUtils.java#L34">ZOrderByteUtils.java:34</a>.</p>
+<p><strong>Comet evidence boundary:</strong> the inspected <code>CometIcebergRewriteActionSuite</code> asserts native scan, write, exchange and sort for a <strong>single-column</strong> <code>zOrder(id)</code> case. That does not prove every multicolumn/type combination converts fully. The October 7 benchmark did not run Z-order. Use the actual plan and result checks before proposing a multidimensional native demo. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 73; opens the local source file" class="source-link">CometIcebergRewriteActionSuite.scala:73</a>.</p>
+<h2 id="6-delete-aware-data-rewrite-versus-delete-file-rewrite">6. Delete-aware data rewrite versus delete-file rewrite</h2>
+<h3 id="applying-deletes-while-rewriting-data">Applying deletes while rewriting data</h3>
+<p>A position delete identifies a data-file path and row position. An equality delete matches field values under Iceberg&#39;s partition and sequence rules. Readers must combine applicable deletes with projected fields and residual semantics before emitting surviving rows. They cannot ignore deletes simply because the output will be a new file.</p>
+<pre><code>Old data file + applicable deletes -&gt; surviving rows -&gt; replacement data files -&gt; atomic reference replacement</code></pre>
+<p>For our delete workload, 16M physical data records minus 800k already-deleted rows gives 15.2M visible rows <strong>both before and after</strong> compaction. The new data files physically contain 15.2M rows. There is no second 5% logical deletion.</p>
+<p>The Comet native scan receives Java-planned file tasks, including delete descriptors. Its Rust reader uses iceberg-rust&#39;s ArrowReader to apply them. The current scan implementation fills missing delete-file lengths with bounded, deduplicated metadata requests; failure to read a required delete file is a correctness error. The reader enables row selection and adapts returned batches to the requested output schema. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 174; opens the local source file" class="source-link">iceberg_scan.rs:174</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 253; opens the local source file" class="source-link">iceberg_scan.rs:253</a>, <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/arrow/reader/pipeline.rs, line 557; opens the local source file" class="source-link">pipeline.rs:557</a>.</p>
+<p>The local suite exercises both position and equality delete application during a native bin-pack rewrite. The measured benchmark covers position deletes only. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 161; opens the local source file" class="source-link">CometIcebergRewriteActionSuite.scala:161</a>.</p>
+<h3 id="compacting-the-delete-files-themselves">Compacting the delete files themselves</h3>
+<p><code>rewrite_position_delete_files</code> operates on the position-delete metadata table and replacement <strong>delete files</strong>, not on the table&#39;s ordinary payload rows.</p>
+<pre><code>Read delete records -&gt; left-semi join live data-file paths -&gt; sort by file_path, pos -&gt; write replacement delete files -&gt; commit</code></pre>
+<p>The semi-join drops dangling position deletes for data files no longer live in that table state. It is not a logical row DELETE and the code path should not be described as a generic equality-delete consolidation procedure. It can reduce delete-file opens and parsing overhead, while still retaining valid delete records. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkBinPackPositionDeletesRewriter.java#L76">SparkBinPackPositionDeletesRewriter.java:76</a>.</p>
+<p>The inspected Comet test asserts <strong>no Comet operators</strong> for this action&#39;s staged metadata-table plan. Native delete application during data compaction does not imply a native delete-file writer. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 93; opens the local source file" class="source-link">CometIcebergRewriteActionSuite.scala:93</a>.</p>
+<p>Iceberg 1.8.1 also has a separate <code>remove-dangling-deletes</code> option on <code>rewrite_data_files</code>, default <strong>false</strong>, which runs additional cleanup of dangling delete references after the rewrite. The benchmark did not enable it; 256 position-delete files remain referenced in its recorded output layouts. Removing live metadata references is still distinct from safely deleting physical files retained by older snapshots. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/api/src/main/java/org/apache/iceberg/actions/RewriteDataFiles.java#L110">RewriteDataFiles.java:110</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java#L189">RewriteDataFilesSparkAction.java:189</a>.</p>
+<h2 id="7-spark-jvm-the-actual-write-protocol">7. Spark JVM: the actual write protocol</h2>
+<p>Iceberg stages a group&#39;s <code>FileScanTask</code>s under a UUID. <code>SparkTableCache</code> and <code>ScanTaskSetManager</code> let the internal Spark read resolve that staged group. After the write completes, <code>FileRewriteCoordinator</code> returns its new <code>DataFile</code>s to the action; the staged objects are cleared in <code>finally</code>. Source: <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/SparkSizeBasedDataRewriter.java#L47">SparkSizeBasedDataRewriter.java:47</a>.</p>
+<p>For stock Spark 3.5.3, <code>V2TableWriteExec.writeWithV2</code> creates a <code>DataWriterFactory</code>, calls <code>sparkContext.runJob</code>, receives each <code>WriterCommitMessage</code>, calls <code>onDataWriterCommit</code>, then calls <code>BatchWrite.commit(messages)</code>. A writing task iterates its rows, writes through the data writer, commits the task writer and closes it. Task-write failure calls abort. <a href="https://github.com/apache/spark/blob/v3.5.3/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/v2/WriteToDataSourceV2Exec.scala#L364">Spark write implementation</a>.</p>
+<pre><code>// Teaching pseudocode for the stock V2 write protocol.
+factory = batchWrite.createBatchWriterFactory(partitionCount)
+messages = runJob(partitions, rows =&gt; writeRowsAndCommitTask(factory, rows))
+batchWrite.commit(messages)</code></pre>
+<p>The actual JVM benchmark plan has <code>BatchScan -&gt; ColumnarToRow -&gt; AppendData</code> for bin-pack. This is evidence about this plan, not a claim that every JVM Iceberg reader uses a row-only scan. Sorting adds <code>Exchange</code> and <code>Sort</code> before the row writer.</p>
+<p><strong>Three meanings of commit must remain separate:</strong></p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Commit point</th>
+<th>What it means in a compaction group</th>
+</tr>
+</thead><tbody><tr>
+<td><code>DataWriter.commit()</code></td>
+<td>Close this task&#39;s files and return a commit message</td>
+</tr>
+<tr>
+<td><code>SparkWrite.RewriteFiles.commit(messages)</code></td>
+<td>Stage the new file descriptors in <code>FileRewriteCoordinator</code></td>
+</tr>
+<tr>
+<td><code>RewriteDataFilesCommitManager.commitFileGroups()</code></td>
+<td>Replace input file references with new files and commit table metadata</td>
+</tr>
+</tbody></table></div>
+<p>The internal <code>AppendData</code> plan does <strong>not</strong> append a second copy of all rows to the real table. Iceberg supplies a special rewrite <code>BatchWrite</code>, whose <code>commit</code> stages the result for the outer action. The outer <code>RewriteFiles</code> operation removes the selected old file references and adds the replacements. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java#L484">SparkWrite.java:484</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java#L74">RewriteDataFilesCommitManager.java:74</a>.</p>
+<h2 id="8-comet-planning-split-eligibility-native-execution">8. Comet planning: split, eligibility, native execution</h2>
+<p><code>IcebergWriteStrategy</code> intercepts eligible Iceberg logical writes and builds a two-operator tree: <code>IcebergCommitExec</code> above the write execution. It recognizes append, overwrite variants and copy-on-write replacement shapes. It does not match merge-on-read <code>WriteDelta</code>. It keeps the same <code>BatchWrite</code> object across the split, avoids duplicating commit during AQE replans, and declines writes requiring the Spark output commit coordinator. Plan-only mode also guards this strategy. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteStrategy.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/iceberg/IcebergWriteStrategy.scala, line 38; opens the local source file" class="source-link">IcebergWriteStrategy.scala:38</a>.</p>
+<pre><code>Stock:   child operators -&gt; Spark V2 JVM writer -&gt; BatchWrite.commit
+Hybrid:  native child -&gt; row conversion -&gt; IcebergWriteExec JVM writer -&gt; IcebergCommitExec
+Native:  native child -&gt; CometIcebergWriteExec Rust writer -&gt; IcebergCommitExec</code></pre>
+<p>The split operator alone is <strong>not proof of native file production</strong>. The native writer needs its own flag, a fully supported native child region and its writer-compatibility checks. The captured local configuration uses:</p>
+<pre><code>spark.comet.write.iceberg.splitOperator.enabled=true
+spark.comet.iceberg.write.enabled=true
+spark.comet.scan.icebergNative.enabled=true
+spark.comet.explain.planOnly.enabled=false</code></pre>
+<p>These names belong to the measured development build. Check the version&#39;s configuration before copying them into another release. Enabling a flag requests acceleration; the executed plan determines whether it happened.</p>
+<h3 id="writer-compatibility-gates">Writer compatibility gates</h3>
+<p><code>CometIcebergNativeWrite.checkTriggers</code> resolves the actual Iceberg write, combines table/write properties and checks the effective contract. Representative boundaries in this checkout:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Contract</th>
+<th>Native requirement / fallback reason</th>
+</tr>
+</thead><tbody><tr>
+<td>Table and format</td>
+<td>Iceberg v1/v2 and effective Parquet format; v3 writing falls back</td>
+</tr>
+<tr>
+<td>Child execution</td>
+<td>Fully native eligible child; unsupported expressions can break continuity</td>
+</tr>
+<tr>
+<td>Types</td>
+<td>Supported Iceberg/Arrow types; UUID rejected by this writer gate</td>
+</tr>
+<tr>
+<td>Location and FileIO</td>
+<td>Supported schemes, recognized FileIO and default location contract</td>
+</tr>
+<tr>
+<td>Encoding properties</td>
+<td>Vetted Parquet properties and supported compression levels</td>
+</tr>
+<tr>
+<td>Unsupported behavior</td>
+<td>Encryption, bloom-filter enablement, custom layout/provider, unsupported page settings</td>
+</tr>
+<tr>
+<td>Java compatibility</td>
+<td>Executor-side reflection needed to reconstruct commit messages must resolve</td>
+</tr>
+</tbody></table></div>
+<p>This is a representative map, not an exhaustive stable compatibility list. The gate fails closed when it cannot establish the contract. Planning fallback preserves the JVM path; a native task failure does not imply a general transparent rerun of that task on JVM. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala, line 133; opens the local source file" class="source-link">CometIcebergNativeWrite.scala:133</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeWrite.scala, line 198; opens the local source file" class="source-link">CometIcebergNativeWrite.scala:198</a>.</p>
+<h2 id="9-comet-rust-scan-exchange-sort-and-real-parquet-bytes">9. Comet Rust: scan, exchange, sort and real Parquet bytes</h2>
+<p>The JVM scan serializer translates the already-planned Iceberg tasks. Native <code>IcebergScanExec</code> passes the task stream to <code>ArrowReaderBuilder</code>, with batch size, file concurrency and row selection. Comet is not delegating the whole table scan to the separate <code>datafusion-iceberg</code> connector. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/operator/CometIcebergNativeScan.scala, line 1; opens the local source file" class="source-link">CometIcebergNativeScan.scala:1</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_scan.rs, line 215; opens the local source file" class="source-link">iceberg_scan.rs:215</a>.</p>
+<p>For sorting, <code>CometExchange</code> still participates in Spark&#39;s shuffle and stage boundaries. <code>CometSort</code> sorts batches in the native executor. The cluster scheduler, shuffle dependency and task retries are still Spark concerns; DataFusion is executing within the task, not replacing the distributed Spark application. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometShuffleExchangeExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/execution/shuffle/CometShuffleExchangeExec.scala, line 1; opens the local source file" class="source-link">CometShuffleExchangeExec.scala:1</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs, line 1577; opens the local source file" class="source-link">native sort planner:1577</a>, <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 1367; opens the local source file" class="source-link">DataFusion SortExec:1367</a>.</p>
+<h3 id="native-writer-construction">Native writer construction</h3>
+<p>The Rust <code>run_write_task</code> composes the real writer stack:</p>
+<pre><code>RecordBatch stream -&gt; field-ID/schema adaptation -&gt; partition writer -&gt; DataFileWriter
+DataFileWriter -&gt; RollingFileWriter -&gt; ParquetWriter -&gt; AsyncArrowWriter -&gt; FileIO output</code></pre>
+<p>Representative construction from the inspected implementation:</p>
+<pre><code>let parquet_builder = ParquetWriterBuilder::new(writer_properties, iceberg_schema);
+let rolling_builder = RollingFileWriterBuilder::new(
+    parquet_builder, target_file_size_bytes, file_io,
+    location_generator, file_name_generator,
+);
+let data_file_builder = DataFileWriterBuilder::new(rolling_builder);</code></pre>
+<p>This abbreviated excerpt omits ownership/cloning details. The important point is that the Rust path performs Parquet encoding, compression, footer generation and file output. It is more than a native scan handing rows to a JVM Parquet writer. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 460; opens the local source file" class="source-link">iceberg_write.rs:460</a>, <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/parquet_writer.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/parquet_writer.rs, line 619; opens the local source file" class="source-link">parquet_writer.rs:619</a>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Native writer mode</th>
+<th>How it handles partitions</th>
+<th>Cost / constraint</th>
+</tr>
+</thead><tbody><tr>
+<td>Unpartitioned</td>
+<td>One rolling writer per task</td>
+<td>Task boundaries still limit output consolidation</td>
+</tr>
+<tr>
+<td>Clustered</td>
+<td>Finish a partition before moving to another</td>
+<td>Revisiting an already-closed partition is invalid</td>
+</tr>
+<tr>
+<td>Fanout</td>
+<td>Maintain writers for multiple encountered partitions</td>
+<td>More simultaneous buffers/files as partition cardinality grows</td>
+</tr>
+</tbody></table></div>
+<p>Comet adds schema field IDs and handles partition transforms/paths compatible with the Java contract. It names outputs using operation/task attempt identity so retries do not collide. It also paces batches in 1,000-row units to align file-roll checks with Iceberg Java&#39;s cadence; this is not a 1,000-row Arrow batch-size setting. The rolling writer checks accumulated size between writes, so the size target is approximate. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 227; opens the local source file" class="source-link">iceberg_write.rs:227</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 500; opens the local source file" class="source-link">iceberg_write.rs:500</a>, <a href="file:///Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/rolling_writer.rs" title="/Users/srajak/.cargo/git/checkouts/iceberg-rust-1cfaaa0dd97c960f/bb1e4a4/crates/iceberg/src/writer/file_writer/rolling_writer.rs, line 160; opens the local source file" class="source-link">rolling_writer.rs:160</a>.</p>
+<h3 id="why-java-still-reads-parquet-metadata-afterward">Why Java still reads Parquet metadata afterward</h3>
+<p>The native writer returns a payload containing an encoded data manifest and written file locations. This manifest is a transport representation of task output; it is not independently published as the table&#39;s snapshot manifest list.</p>
+<p><code>CometIcebergWriteExec</code> decodes it on the executor, rebuilds <code>DataFile</code> metrics using the version-matched Iceberg Java Parquet footer logic and <code>MetricsConfig</code>, reconciles NaN/bounds information and constructs <code>SparkWrite.TaskCommit</code>. These statistics matter to future pruning correctness, so compatibility includes more than returning equal row counts. The driver receives the commit messages, not all output rows. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala, line 175; opens the local source file" class="source-link">CometIcebergWriteExec.scala:175</a>.</p>
+<p><code>IcebergCommitExec</code> invokes the captured <code>BatchWrite.commit</code>. <strong>For a rewrite group, this stages descriptors in Iceberg&#39;s coordinator, just as the JVM path does. The outer action performs final snapshot publication.</strong> Reading the plan label <code>IcebergCommit</code> as “the entire compaction&#39;s final catalog commit is timed here” would be incorrect. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala, line 67; opens the local source file" class="source-link">IcebergCommitExec.scala:67</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/source/SparkWrite.java#L484">SparkWrite.java:484</a>.</p>
+<h2 id="10-atomicity-conflicts-and-cleanup">10. Atomicity, conflicts and cleanup</h2>
+<pre><code>Start snapshot S -&gt; write candidate replacement files -&gt; validate against current state -&gt; publish new metadata</code></pre>
+<p>Without partial progress, the action waits for the selected groups and performs one replacement commit. With partial progress, batches of completed groups can commit separately, so a failed overall action may already have published successful groups. <code>max-concurrent-file-group-rewrites</code> controls concurrent group jobs; it is not the number of executor cores. More group concurrency can increase memory, shuffle pressure and conflict exposure. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/main/java/org/apache/iceberg/spark/actions/RewriteDataFilesSparkAction.java#L282">RewriteDataFilesSparkAction.java:282</a>.</p>
+<p><code>RewriteDataFilesCommitManager</code> calls <code>table.newRewrite().validateFromSnapshot(startingSnapshotId)</code>. With the default <code>use-starting-sequence-number=true</code>, it assigns the starting snapshot&#39;s sequence number to the replacement data. Newer equality deletes can remain applicable to replacement rows. Position deletes reference old paths/positions and need conflict validation; they cannot just be copied onto newly sorted output. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java#L82">RewriteDataFilesCommitManager.java:82</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/MergingSnapshotProducer.java#L450">MergingSnapshotProducer.java:450</a>.</p>
+<p>Concurrent appends can often coexist because they add independent files; overlapping rewrites/removals or new position deletes can invalidate the planned replacement. A metadata commit retry is not always enough: a semantic conflict can require re-planning and re-reading. The catalog&#39;s commit protocol decides atomic publication; it is not universally an object-store rename.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Failure point</th>
+<th>Ownership and behavior</th>
+</tr>
+</thead><tbody><tr>
+<td>Native stream/write/close failure</td>
+<td>Rust abort guard owns files until its result is handed over</td>
+</tr>
+<tr>
+<td>Manifest decode / JVM metrics rebuild / task-message failure</td>
+<td>Executor JVM cleanup owns the newly written files after handoff</td>
+</tr>
+<tr>
+<td>Group job fails before group commit</td>
+<td>Spark/Comet job-abort handling and Iceberg action cleanup coordinate completed outputs</td>
+</tr>
+<tr>
+<td>Known cleanable outer commit failure</td>
+<td>Iceberg <code>commitOrClean</code> may remove uncommitted replacement files</td>
+</tr>
+<tr>
+<td>Unknown outer commit outcome</td>
+<td>Do not delete replacements; they may already be referenced by a successful commit</td>
+</tr>
+</tbody></table></div>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 455; opens the local source file" class="source-link">iceberg_write.rs:455</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometIcebergWriteExec.scala, line 185; opens the local source file" class="source-link">CometIcebergWriteExec.scala:185</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/IcebergCommitExec.scala, line 80; opens the local source file" class="source-link">IcebergCommitExec.scala:80</a>, <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/core/src/main/java/org/apache/iceberg/actions/RewriteDataFilesCommitManager.java#L112">RewriteDataFilesCommitManager.java:112</a>.</p>
+<p>Physical old files can remain after a successful rewrite because older snapshots still reference them. Compaction improves the <strong>current</strong> layout; retention/expiration decides when historical files can be reclaimed.</p>
+<h2 id="11-code-reading-and-test-map">11. Code-reading and test map</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Layer</th>
+<th>Read in this order</th>
+<th>What to inspect</th>
+</tr>
+</thead><tbody><tr>
+<td>Iceberg policy</td>
+<td><code>RewriteDataFilesProcedure</code> -&gt; <code>RewriteDataFilesSparkAction</code> -&gt; <code>SizeBasedDataRewriter</code> -&gt; <code>SizeBasedFileRewriter</code></td>
+<td>Candidate selection, groups, thresholds, size estimates</td>
+</tr>
+<tr>
+<td>Iceberg execution</td>
+<td><code>SparkSizeBasedDataRewriter</code> -&gt; bin-pack / shuffling / sort / Z-order rewriter -&gt; <code>SparkWrite.RewriteFiles</code></td>
+<td>Staged task IDs, distribution, coordinator handoff</td>
+</tr>
+<tr>
+<td>Spark V2</td>
+<td><code>V2TableWriteExec.writeWithV2</code> -&gt; <code>WritingSparkTask.run</code></td>
+<td>Factory, task attempts, commit messages, driver callback</td>
+</tr>
+<tr>
+<td>Comet planning</td>
+<td><code>IcebergWriteStrategy</code> -&gt; <code>CometIcebergNativeWrite</code></td>
+<td>Separate split and native gates, fallback reasons</td>
+</tr>
+<tr>
+<td>Comet task</td>
+<td><code>CometIcebergNativeScanExec</code> -&gt; <code>iceberg_scan.rs</code> -&gt; <code>iceberg_write.rs</code> -&gt; <code>CometIcebergWriteExec</code></td>
+<td>Arrow path, files, footer metrics and commit payload</td>
+</tr>
+<tr>
+<td>Iceberg final commit</td>
+<td><code>RewriteDataFilesCommitManager</code> -&gt; <code>BaseRewriteFiles</code> -&gt; <code>MergingSnapshotProducer</code></td>
+<td>Starting snapshot, sequence numbers, conflicts, cleanup</td>
+</tr>
+</tbody></table></div>
+<p>Inspected test anchors:</p>
+<ul>
+<li><code>CometIcebergRewriteActionSuite</code>: bin-pack native scan/write, native sort/exchange, single-column Z-order, position/equality delete application, and no native conversion for position-delete-file rewrite. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 48; opens the local source file" class="source-link">CometIcebergRewriteActionSuite.scala:48</a>.</li>
+<li>Iceberg 1.8.1 <code>TestRewriteDataFilesAction</code>: high/low delete ratios, bin-pack with deletes, dangling deletes, partial progress and commit/rewrite failures, multiple sort groups and Z-order. <a href="https://github.com/apache/iceberg/blob/apache-iceberg-1.8.1/spark/v3.5/spark/src/test/java/org/apache/iceberg/spark/actions/TestRewriteDataFilesAction.java#L317">TestRewriteDataFilesAction.java:317</a>.</li>
+<li>Native writer tests in <code>iceberg_write.rs</code>: clustered/fanout modes, rolling cadence across batch boundaries, abort ownership, deterministic file ordering and manifest round trip. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/operators/iceberg_write.rs, line 1898; opens the local source file" class="source-link">iceberg_write.rs:1898</a>.</li>
+</ul>
+<p><strong>Questions to ask when a new workload falls back:</strong> Is it a real data-table scan? Is the write shape intercepted? Did every child operator convert? Does the effective writer contract pass? Does the internal group plan contain <code>CometIcebergWrite</code>? What do the output footers say? A plugin in the Spark Environment tab answers none of those by itself.</p>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="20-iceberg-spark-ui-metrics.html"><small>Previous</small>Iceberg metrics in Spark UI: planning, execution and commit evidence</a><a href="22-table-health-and-compaction-benchmark.html"><small>Next</small>Table health and benchmark</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

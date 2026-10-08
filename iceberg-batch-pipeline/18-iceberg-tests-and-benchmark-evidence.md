@@ -1,5 +1,7 @@
 # Iceberg integration tests benchmark coverage and evidence gaps
 
+October 8 addendum: [chapter 21](21-compaction-algorithms-and-execution.md) traces compaction algorithms and the staged-write/final-commit boundary; [chapter 22](22-table-health-and-compaction-benchmark.md) records the newer 16M-row, five-run JVM/Comet benchmark. Earlier measurements below remain historical.
+
 [Index](README.md) | [Metadata and snapshots](16-iceberg-metadata-and-snapshots.md) | [Distributed compaction](17-distributed-iceberg-and-compaction.md)
 
 There is substantial source coverage for metadata commits, distributed planning, rewrite failures, native write engagement and delete-correct compaction. That does not establish a measured cluster-scale Comet advantage. This chapter separates what tests assert, what benchmark code times, what old local reports show, and what still needs a controlled run.

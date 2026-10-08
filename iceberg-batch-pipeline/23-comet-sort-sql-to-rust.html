@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CometSort: SQL, Spark plans and the Rust sorter | Iceberg batch notebook</title><link rel="stylesheet" href="assets/notes.css"><script defer src="assets/notes.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to content</a><div class="layout"><aside class="sidebar"><a class="brand" href="index.html">Iceberg batch<br><span>pipeline notebook</span></a><p class="sidebar-caption">Spark · Iceberg · Comet<br>DataFusion · Arrow</p><details class="chapter-nav" open><summary>Chapters</summary><nav aria-label="Chapters"><ol><li><a href="index.html"><span class="chapter-number"></span>Overview</a></li>
+<li><a href="01-system-architecture.html"><span class="chapter-number">01</span>System architecture</a></li>
+<li><a href="02-iceberg-scan.html"><span class="chapter-number">02</span>Iceberg scans</a></li>
+<li><a href="03-parquet.html"><span class="chapter-number">03</span>Parquet read and write</a></li>
+<li><a href="04-native-runtime-and-serde.html"><span class="chapter-number">04</span>Runtime and serialization</a></li>
+<li><a href="05-distributed-execution.html"><span class="chapter-number">05</span>Distributed execution</a></li>
+<li><a href="06-iceberg-write.html"><span class="chapter-number">06</span>Writes and commits</a></li>
+<li><a href="07-fault-tolerance.html"><span class="chapter-number">07</span>Fault tolerance</a></li>
+<li><a href="08-capabilities-and-debugging.html"><span class="chapter-number">08</span>Capabilities and gaps</a></li>
+<li><a href="09-source-ledger.html"><span class="chapter-number">09</span>Source ledger</a></li>
+<li><a href="10-datafusion-and-connector.html"><span class="chapter-number">10</span>DataFusion and connector</a></li>
+<li><a href="11-tpch-dataset-and-schema.html"><span class="chapter-number">11</span>TPC-H dataset and schema</a></li>
+<li><a href="12-tpch-spark-versus-comet.html"><span class="chapter-number">12</span>TPC-H benchmark findings</a></li>
+<li><a href="13-arrow-memory-and-kernels.html"><span class="chapter-number">13</span>Arrow memory and kernels</a></li>
+<li><a href="14-vectorization-and-hardware.html"><span class="chapter-number">14</span>Vectorization and hardware</a></li>
+<li><a href="15-arrow-in-iceberg-scan-and-rewrite.html"><span class="chapter-number">15</span>Arrow scans and rewrites</a></li>
+<li><a href="16-iceberg-metadata-and-snapshots.html"><span class="chapter-number">16</span>Metadata and snapshots</a></li>
+<li><a href="17-distributed-iceberg-and-compaction.html"><span class="chapter-number">17</span>Distributed compaction</a></li>
+<li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
+<li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
+<li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html" aria-current="page"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
+<li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
+<li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="23-comet-sort-sql-to-rust.md">Markdown source</a></header><article><h1 id="cometsort-sql-spark-plans-and-the-rust-sorter">CometSort: SQL, Spark plans and the Rust sorter</h1>
+<details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#the-complete-path">The complete path</a></li>
+<li><a href="#1-start-from-sql-and-the-captured-plan">1. Start from SQL and the captured plan</a></li>
+<li><a href="#2-scala-replace-the-operator-and-preserve-its-contract">2. Scala: replace the operator and preserve its contract</a></li>
+<li><a href="#3-rust-comet-constructs-datafusion-sortexec">3. Rust: Comet constructs DataFusion SortExec</a></li>
+<li><a href="#4-arrow-compare-keys-sort-indices-gather-rows">4. Arrow: compare keys, sort indices, gather rows</a></li>
+<li><a href="#5-larger-than-memory-runs-spill-and-merge">5. Larger than memory: runs, spill and merge</a></li>
+<li><a href="#6-where-the-benefit-comes-from">6. Where the benefit comes from</a></li>
+<li><a href="#7-demo-make-the-work-visible-in-spark-history-server">7. Demo: make the work visible in Spark History Server</a></li>
+<li><a href="#8-source-inspected-tests-and-reading-order">8. Source-inspected tests and reading order</a></li></ul></nav></details>
+<p><code>CometSort</code> is the Spark UI name for Comet&#39;s replacement of an eligible Spark <code>SortExec</code>. It sorts the rows delivered to a task using DataFusion&#39;s native external sorter and Arrow arrays. The exchange determines which rows reach each task; sorting establishes their order inside that task. Iceberg still chooses the compaction work and commits the replacement snapshot.</p>
+<p>The benefit is the opportunity to keep scan, shuffle, sort and write in native columnar execution. It is not a promise that every sort is faster, that sorting becomes linear, or that native execution removes shuffle and disk I/O.</p>
+<p>Read <a href="21-compaction-algorithms-and-execution.html">chapter 21</a> for Iceberg&#39;s compaction policy and writer/commit internals, and <a href="22-table-health-and-compaction-benchmark.html">chapter 22</a> for the dataset, machine, timings and full demo procedure.</p>
+<h2 id="the-complete-path">The complete path</h2>
+<pre><code>SQL / Iceberg rewrite -&gt; Spark SortExec -&gt; CometSortExec -&gt; protobuf Sort
+Task JNI -&gt; Comet PhysicalPlanner -&gt; DataFusion SortExec -&gt; ExternalSorter
+Arrow key arrays -&gt; sorted row indices -&gt; gathered output batches -&gt; merge / spill
+Ordered batches -&gt; downstream operator or native Iceberg writer -&gt; Java commit</code></pre>
+<p><strong>Inspected on 2026-10-08:</strong> Comet checkout <code>184accac5b9cee6b761a6673c73c263adedef45e</code>, with the pre-existing local scan/benchmark edits recorded in the source ledger. Rust internals below use the resolved Cargo sources: <code>datafusion-physical-plan 55.1.0</code> and <code>arrow-ord 59.3.0</code>. The five inspected dependency files match their local cached <code>.crate</code> archives byte for byte; this is local source consistency, not proof of the measured binary&#39;s source. Iceberg SQL examples match runtime 1.8.1 and the baseline Spark runtime is 3.5.3. No benchmark or engine test was rerun for this chapter.</p>
+<h2 id="1-start-from-sql-and-the-captured-plan">1. Start from SQL and the captured plan</h2>
+<p>This is the actual sorted-compaction statement from the 16M-row benchmark:</p>
+<pre><code>-- Scan + range exchange + sort + replacement-file write + snapshot commit.
+CALL local.system.rewrite_data_files(
+  table =&gt; &#39;compaction_bench.clean&#39;,
+  strategy =&gt; &#39;sort&#39;,
+  sort_order =&gt; &#39;customer_id ASC NULLS FIRST, id ASC NULLS FIRST&#39;,
+  options =&gt; map(
+    &#39;rewrite-all&#39;, &#39;true&#39;,
+    &#39;target-file-size-bytes&#39;, &#39;134217728&#39;,
+    &#39;max-concurrent-file-group-rewrites&#39;, &#39;1&#39;,
+    &#39;partial-progress.enabled&#39;, &#39;false&#39;
+  )
+);</code></pre>
+<p>The target is <strong>128 MiB per file</strong>, not 128 MiB of sort memory. <code>max-concurrent-file-group-rewrites=1</code> serializes rewrite groups; it does not limit the job to one task. The saved exchange has nine partitions. That is an observed planning result for this fixture, not a fixed Comet setting.</p>
+<p>The <a href="assets/compaction/jvm-sort.plan.txt">saved JVM plan</a> and <a href="assets/compaction/comet-sort.plan.txt">saved Comet plan</a>, simplified only by removing attributes and IDs:</p>
+<pre><code>JVM                                      Comet
+AppendData                               IcebergCommit
+  Sort(customer_id, id), global=false       CometIcebergWrite
+    Exchange(range, 9 partitions)             CometSort(customer_id, id)
+      ColumnarToRow                             CometExchange(range, 9, CometNativeShuffle)
+        BatchScan                                CometIcebergNativeScan</code></pre>
+<p>Read from the bottom up. In the Comet plan, the native scan supplies batches, range exchange routes rows, <code>CometSort</code> orders them, and the native writer produces Parquet. The <code>IcebergCommit</code> node coordinates the write result with Java; the outer Iceberg rewrite action performs the final replacement-snapshot commit described in chapter 21.</p>
+<p>The JVM plan&#39;s <code>global=false</code> does <strong>not</strong> mean rows are sorted without a useful layout. Iceberg explicitly requested the range exchange first, followed by a local sort. Distribution and ordering are separate requirements.</p>
+<h3 id="three-sql-shapes-to-distinguish">Three SQL shapes to distinguish</h3>
+<pre><code>-- Local ordering only; partitions need not have disjoint key ranges.
+EXPLAIN FORMATTED
+SELECT id, customer_id, amount
+FROM local.compaction_bench.clean
+SORT BY customer_id ASC NULLS FIRST, id ASC NULLS FIRST;
+
+-- Global result ordering; Spark must also satisfy ordered distribution.
+EXPLAIN FORMATTED
+SELECT id, customer_id, amount
+FROM local.compaction_bench.clean
+ORDER BY customer_id ASC NULLS FIRST, id ASC NULLS FIRST;
+
+-- Top-K: may select a different operator and algorithm.
+EXPLAIN FORMATTED
+SELECT id, customer_id, amount
+FROM local.compaction_bench.clean
+ORDER BY customer_id ASC NULLS FIRST, id ASC NULLS FIRST
+LIMIT 10;</code></pre>
+<p><code>EXPLAIN</code> plans these queries; remove it to execute them. <code>ORDER BY ... LIMIT</code> can become <code>CometTakeOrderedAndProject</code>, with local and final bounded ordering work, instead of a full <code>CometSort</code>. It is therefore a poor substitute for measuring sorted compaction. Source: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometTakeOrderedAndProjectExec.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/CometTakeOrderedAndProjectExec.scala, line 45; opens the local source file" class="source-link">CometTakeOrderedAndProjectExec.scala:45</a>.</p>
+<p>In Spark 3.5.3, a global <code>SortExec</code> requests <code>OrderedDistribution</code>; local sorting retains the child&#39;s partitioning. The JVM implementation creates an <code>UnsafeExternalRowSorter</code>, including a prefix comparator and a restricted single-key radix option. Spark already has code generation, compact rows, memory management and spilling. The comparison is not native code versus an unoptimized object-per-row sorter. Source: <a href="https://github.com/apache/spark/blob/v3.5.3/sql/core/src/main/scala/org/apache/spark/sql/execution/SortExec.scala">Spark 3.5.3 SortExec.scala</a>.</p>
+<h2 id="2-scala-replace-the-operator-and-preserve-its-contract">2. Scala: replace the operator and preserve its contract</h2>
+<p><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometExecRule.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/rules/CometExecRule.scala, line 90; opens the local source file" class="source-link">CometExecRule.scala:90</a> registers <code>classOf[SortExec] -&gt; CometSortExec</code>. The serializer checks type/expression support and requires a convertible child. This excerpt is from <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala, line 1447; opens the local source file" class="source-link">operators.scala:1447</a>:</p>
+<pre><code>val sortOrders = op.sortOrder.map(exprToProto(_, op.child.output))
+
+if (sortOrders.forall(_.isDefined) &amp;&amp; childOp.nonEmpty) {
+  val sortBuilder = OperatorOuterClass.Sort
+    .newBuilder()
+    .addAllSortOrders(sortOrders.map(_.get).asJava)
+  Some(builder.setSort(sortBuilder).build())
+}</code></pre>
+<p>The omitted branch records a fallback reason and returns <code>None</code>. <code>createExec</code> builds <code>CometSortExec</code>, retaining Spark&#39;s output attributes, ordering and original plan. One line establishes a critical boundary:</p>
+<pre><code>override def outputPartitioning: Partitioning = child.outputPartitioning</code></pre>
+<p>Source: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala, line 1482; opens the local source file" class="source-link">operators.scala:1482</a>. <code>CometSort</code> does not itself change Spark partition ownership or perform a cluster-wide merge. Spark&#39;s exchanges establish that ownership; native sort execution happens inside the scheduled task.</p>
+<h3 id="what-crosses-the-language-boundary">What crosses the language boundary?</h3>
+<p>The operator carries expressions, not SQL text to reparse. Each sort key records its bound child expression, ascending/descending direction and null placement. <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/CometSortOrder.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/CometSortOrder.scala, line 54; opens the local source file" class="source-link">CometSortOrder.scala:54</a> maps direction to <code>0/1</code> and null ordering to <code>0/1</code>. The protobuf definitions are:</p>
+<pre><code>message Sort {
+  repeated spark.spark_expression.Expr sort_orders = 1;
+  optional int32 fetch = 3;
+  optional int32 skip = 4;
+}
+
+message SortOrder {
+  Expr child = 1;
+  SortDirection direction = 2;
+  NullOrdering null_ordering = 3;
+}</code></pre>
+<p>Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/proto/src/proto/operator.proto" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/proto/src/proto/operator.proto, line 805; opens the local source file" class="source-link">operator.proto:805</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/proto/src/proto/expr.proto" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/proto/src/proto/expr.proto, line 457; opens the local source file" class="source-link">expr.proto:457</a>. Ordinary <code>CometSortExec.convert</code> sets the keys; <code>fetch</code>/<code>skip</code> also allow other native planning paths to express bounded ordering.</p>
+<p><code>CometExecIterator</code> creates a native task context with the serialized plan, inputs, configuration, metrics, memory manager and local disk directories. <code>Native_executePlan</code> lazily calls <code>PhysicalPlanner.create_plan</code> when execution first starts. This is a task/stream boundary, not a JNI invocation for every comparison. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometExecIterator.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometExecIterator.scala, line 124; opens the local source file" class="source-link">CometExecIterator.scala:124</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/jni_api.rs, line 1090; opens the local source file" class="source-link">jni_api.rs:1090</a>.</p>
+<h2 id="3-rust-comet-constructs-datafusion-sortexec">3. Rust: Comet constructs DataFusion SortExec</h2>
+<p><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs, line 1015; opens the local source file" class="source-link">PhysicalPlanner.create_sort_expr</a> creates a <code>PhysicalSortExpr</code>: its expression reads the key column or computes the key, and its <code>SortOptions</code> carry direction/null semantics. The <code>OpStruct::Sort</code> branch creates the actual native operator:</p>
+<pre><code>let fetch = sort.fetch.map(|num| num as usize);
+
+let mut sort_exec: Arc&lt;dyn ExecutionPlan&gt; = Arc::new(
+    SortExec::new(
+        LexOrdering::new(exprs?).unwrap(),
+        Arc::clone(&amp;child.native_plan),
+    )
+    .with_fetch(fetch),
+);</code></pre>
+<p>Source: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs, line 1577; opens the local source file" class="source-link">planner.rs:1577</a>. This <code>SortExec</code> comes from DataFusion. Optional offset handling wraps it with <code>GlobalLimitExec</code>; ordinary sorted compaction has no fetch/offset.</p>
+<p>DataFusion&#39;s constructor describes a single sorted output partition. That is a property of the <strong>native plan inside a Spark task</strong>. It does not imply one Spark output partition for the whole nine-task exchange.</p>
+<p><strong>A misleading filename:</strong> Comet&#39;s <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/sort.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/sort.rs, line 23; opens the local source file" class="source-link">native/core/src/execution/sort.rs:23</a> is a radix helper for packed shuffle row addresses/partition IDs. It is not the implementation of SQL <code>CometSort</code>. Follow <code>planner.rs</code> into DataFusion&#39;s <code>sorts/sort.rs</code> instead.</p>
+<h3 id="execute-chooses-among-three-paths">Execute chooses among three paths</h3>
+<p>In <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 1367; opens the local source file" class="source-link">DataFusion SortExec::execute:1367</a>:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Condition</th>
+<th>Behavior</th>
+</tr>
+</thead><tbody><tr>
+<td>Input properties already satisfy the ordering</td>
+<td>Return the input, optionally capped by a limit</td>
+</tr>
+<tr>
+<td>Ordering unsatisfied and <code>fetch</code> is present</td>
+<td>Build <code>TopK</code>, insert batches and emit bounded results</td>
+</tr>
+<tr>
+<td>Ordering unsatisfied and no <code>fetch</code></td>
+<td>Build <code>ExternalSorter</code>, insert every batch, then finish the sort</td>
+</tr>
+</tbody></table></div>
+<p>The full-sort loop is:</p>
+<pre><code>while let Some(batch) = input.next().await {
+    let batch = batch?;
+    sorter.insert_batch(batch).await?;
+}
+drop(input);
+sorter.sort().await</code></pre>
+<p>Source: <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 1444; opens the local source file" class="source-link">sort.rs:1444</a>. Full sort is blocking with respect to its unsorted task input: it cannot emit the final globally ordered task result just because the first batch has been sorted. Another batch might contain a smaller key.</p>
+<h2 id="4-arrow-compare-keys-sort-indices-gather-rows">4. Arrow: compare keys, sort indices, gather rows</h2>
+<p>The normal external-sort run path in this dependency is:</p>
+<pre><code>ExternalSorter.in_mem_sort_stream -&gt; sort_batch_stream -&gt; sort_batch_chunked
+IncrementalSortIterator.next -&gt; evaluate_to_sort_column -&gt; lexsort_to_indices
+Sorted UInt32 indices -&gt; take_record_batch -&gt; ordered output chunks</code></pre>
+<p>Sources: <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 733; opens the local source file" class="source-link">sort.rs:733</a>, <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 919; opens the local source file" class="source-link">sort.rs:919</a>, <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/stream.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/stream.rs, line 334; opens the local source file" class="source-link">stream.rs:334</a>.</p>
+<p>Teaching pseudocode, preserving those calls but omitting error handling and iterator state:</p>
+<pre><code>let keys = expressions.iter()
+    .map(|expr| expr.evaluate_to_sort_column(&amp;batch))
+    .collect::&lt;Result&lt;Vec&lt;_&gt;&gt;&gt;()?;
+let indices = lexsort_to_indices(&amp;keys, None)?;
+let chunk_indices = indices.slice(cursor, batch_size);
+let output = take_record_batch(&amp;batch, &amp;chunk_indices)?;</code></pre>
+<p>The nearby <code>sort_batch</code> helper expresses the same index-then-gather idea using <code>take_arrays</code>, but the inspected <code>ExternalSorter</code> calls the chunked iterator path above. Also, <code>sort_batch_chunked</code> collects those chunks into a vector in this version. Chunked output does not prove that only one output chunk is ever live during a sort call.</p>
+<h3 id="a-four-row-example">A four-row example</h3>
+<p>Illustrative input, ordered by <code>customer_id ASC NULLS FIRST, id ASC NULLS FIRST</code>:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Original row index</th>
+<th>customer_id</th>
+<th>id</th>
+<th>amount</th>
+</tr>
+</thead><tbody><tr>
+<td>0</td>
+<td>20</td>
+<td>7</td>
+<td>3.5</td>
+</tr>
+<tr>
+<td>1</td>
+<td>10</td>
+<td>9</td>
+<td>8.0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>20</td>
+<td>2</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>3</td>
+<td>NULL</td>
+<td>4</td>
+<td>6.0</td>
+</tr>
+</tbody></table></div>
+<pre><code>Compare customer_id -&gt; if equal compare id -&gt; ordered indices [3, 1, 2, 0]
+Gather every output column with [3, 1, 2, 0] -&gt; rows stay aligned</code></pre>
+<p>Sorting only the customer column independently would corrupt the records. Indices describe a shared permutation applied to all payload columns, including <code>amount</code>, <code>status</code> and <code>payload</code> in the real fixture.</p>
+<p><a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-ord-59.3.0/src/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-ord-59.3.0/src/sort.rs, line 940; opens the local source file" class="source-link">Arrow lexsort_to_indices:940</a> dispatches a supported single key to <code>sort_to_indices</code>. Multiple keys use lexicographic comparison, including specialized fixed-key-count comparators for two through five columns. For the benchmark&#39;s two keys and no limit, it sorts the row-index vector using the two-key comparator. This is ordinary comparison sorting, not the shuffle radix helper.</p>
+<p>The general <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-ord-59.3.0/src/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/arrow-ord-59.3.0/src/sort.rs, line 1135; opens the local source file" class="source-link">LexicographicalComparator::compare:1135</a> shows the semantics:</p>
+<pre><code>for comparator in &amp;self.compare_items {
+    match comparator(a_idx, b_idx) {
+        Ordering::Equal =&gt; continue,
+        r =&gt; return r,
+    }
+}
+Ordering::Equal</code></pre>
+<p>Comparisons stop at the first differing key. Null placement and descending order are part of each comparator. Equal keys have no stable input-order guarantee; add a unique tie-breaker when a reproducible total order matters. The fixture uses <code>id</code> after <code>customer_id</code>.</p>
+<p>Gathering rows is not generally zero-copy. It allocates/reorders output buffers, and wide rows can make memory bandwidth significant even when key comparisons are cheap. Columnar batch execution also does not prove that every comparison is SIMD. See <a href="13-arrow-memory-and-kernels.html">Arrow memory</a> and <a href="14-vectorization-and-hardware.html">hardware</a>.</p>
+<h3 id="spark-floating-point-semantics-still-matter">Spark floating-point semantics still matter</h3>
+<p>The inspected Comet planner normalizes scalar floating-point <strong>comparison keys</strong> so NaN payloads and signed zero compare according to Spark&#39;s ordering rules. Returned values retain their original representations. Nested floating-point values inside arrays/structs/maps have separate compatibility restrictions; a scalar fix does not establish nested compatibility. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/CometSortOrder.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/serde/CometSortOrder.scala, line 38; opens the local source file" class="source-link">CometSortOrder.scala:38</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/native/core/src/execution/planner.rs, line 984; opens the local source file" class="source-link">planner.rs:984</a>.</p>
+<h2 id="5-larger-than-memory-runs-spill-and-merge">5. Larger than memory: runs, spill and merge</h2>
+<p><code>ExternalSorter.insert_batch</code> reserves merge headroom, reserves memory for the incoming batch and buffers it. If growing the reservation fails while buffered batches exist, it sorts/spills that buffered data, then retries the reservation. A batch that still cannot fit can produce a resource-exhaustion error. Spill support is not unlimited memory. Sources: <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 321; opens the local source file" class="source-link">insert_batch:321</a>, <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 799; opens the local source file" class="source-link">reserve_memory_for_batch_and_maybe_spill:799</a>.</p>
+<p>For small buffered input, <code>in_mem_sort_stream</code> may concatenate batches and sort one larger batch. For larger input, it forms sorted runs and merges them. The inspected source also coalesces eligible single-key runs to reduce merge fan-in; this is a version-specific detail, not a universal property of every Comet build. Source: <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/sort.rs, line 595; opens the local source file" class="source-link">in_mem_sort_stream:595</a>.</p>
+<pre><code>Incoming batches -&gt; memory reservation -&gt; sorted runs in memory
+Memory pressure -&gt; sorted spill files -&gt; release buffered state -&gt; accept more input
+End of input -&gt; merge remaining runs / spill files -&gt; ordered output batches</code></pre>
+<p><a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/streaming_merge.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/streaming_merge.rs, line 180; opens the local source file" class="source-link">StreamingMergeBuilder::build:180</a> selects specialized single-key cursors where possible; general multi-key merge uses <code>RowCursorStream</code>. Spill files use a multi-level merge builder. <a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/merge.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/merge.rs, line 54; opens the local source file" class="source-link">SortPreservingMergeStream</a> keeps a <strong>loser tree</strong>: a tournament structure that remembers losing run heads so it can efficiently find the next smallest row after advancing the winner.</p>
+<p>Illustrative merge: runs <code>[1, 4, 8]</code>, <code>[2, 3, 9]</code>, <code>[0, 7]</code> emit <code>0, 1, 2, 3, 4, 7, 8, 9</code>. The merge does not sort their concatenation from scratch. Comparison-based run sorting is roughly <code>O(n log n)</code>; merging <code>R</code> runs is roughly <code>O(N log R)</code>, before key-comparison, copying and I/O costs. Multi-level spills add passes and disk traffic.</p>
+<p>Sort memory includes decoded input, indices, output buffers, comparison/merge keys and reserved merge headroom. It cannot be estimated from compressed Parquet bytes alone. Increasing task concurrency can increase total memory pressure even if each task processes less data. Spark task spill counters and native operator spill metrics can have different accounting scopes; do not assume they are interchangeable.</p>
+<h2 id="6-where-the-benefit-comes-from">6. Where the benefit comes from</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Mechanism</th>
+<th>Why it can help</th>
+<th>What must still be measured</th>
+</tr>
+</thead><tbody><tr>
+<td>Native columnar continuity</td>
+<td>Avoids the saved JVM plan&#39;s columnar-to-row path and keeps adjacent eligible operators working on batches</td>
+<td>Actual executed plan and boundary conversions</td>
+</tr>
+<tr>
+<td>Native key comparison and gathering</td>
+<td>Works directly on Arrow buffers and uses type/key-count-specific kernels</td>
+<td>CPU profiles, row width, key types and memory bandwidth</td>
+</tr>
+<tr>
+<td>Native shuffle + sort + write together</td>
+<td>Can reduce conversion/serialization overhead across the rewrite pipeline</td>
+<td>End-to-end job time, shuffle bytes, write throughput and commit time</td>
+</tr>
+<tr>
+<td>External-sort memory accounting</td>
+<td>Allows bounded runs and spill instead of requiring all rows in memory</td>
+<td>Spill count/bytes, disk throughput and failure behavior</td>
+</tr>
+<tr>
+<td>Already-ordered / bounded paths</td>
+<td>Can avoid unnecessary full sorting where the plan proves it safe</td>
+<td>Ordering properties and selected Top-K/full-sort operator</td>
+</tr>
+</tbody></table></div>
+<p>These are mechanisms or performance hypotheses, not measured attribution. Tiny inputs can be dominated by planning/native setup. Wide strings, nested comparisons, skewed range partitions, frequent spilling, slow storage and fallback conversions can reduce or reverse a gain. Both Spark and DataFusion already implement optimized external sorting.</p>
+<h3 id="what-our-benchmark-establishes">What our benchmark establishes</h3>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Sorted compaction</th>
+<th>Spark JVM</th>
+<th>Comet</th>
+</tr>
+</thead><tbody><tr>
+<td>Median complete rewrite</td>
+<td>9.598 s</td>
+<td>4.156 s</td>
+</tr>
+<tr>
+<td>Active input data files</td>
+<td>256</td>
+<td>256</td>
+</tr>
+<tr>
+<td>Active output data files</td>
+<td>9</td>
+<td>9</td>
+</tr>
+<tr>
+<td>Logical row count</td>
+<td>16,000,000</td>
+<td>16,000,000</td>
+</tr>
+</tbody></table></div>
+<p>The ratio is <strong>2.31x for the whole sorted compaction</strong>, including scan, exchange, sort, write and the procedure&#39;s final commit. It is not a <code>CometSort</code> microbenchmark. The fixture starts with about 1.18 GiB of Parquet; five measured trials per engine/workload and the checks are preserved in <a href="assets/compaction/compaction-16m.json">the benchmark evidence</a>. Dataset/machine/cache/configuration qualifications are in chapter 22.</p>
+<p>Disabling only <code>spark.comet.exec.sort.enabled</code> during this compaction is not automatically a clean sort-only experiment. In this checkout, the native Iceberg writer requires an eligible native child; losing native sort can also change the writer or insert conversions. Inspect both plans before attributing a timing difference to one operator.</p>
+<h3 id="how-this-improves-table-health">How this improves table health</h3>
+<p>Compaction reduces active file fragmentation. Sorting additionally clusters nearby key values, which can tighten file and row-group min/max ranges and improve pruning for matching predicates. Both engines can produce that layout. Comet&#39;s demonstrated benefit here is spending less elapsed time performing the rewrite, not an exclusive ability to create better statistics.</p>
+<p>For <code>(customer_id, id)</code>, predicates on the leading customer key are natural candidates for better pruning. Predicates only on <code>id</code> need not benefit as much. Independent rewrite groups can still have overlapping key ranges; this is not a global table index. Neither sorted files nor a table sort-order declaration guarantees that a later <code>SELECT</code> without <code>ORDER BY</code> returns sorted results. Post-compaction read latency and scan-byte savings were not measured in this benchmark.</p>
+<h2 id="7-demo-make-the-work-visible-in-spark-history-server">7. Demo: make the work visible in Spark History Server</h2>
+<ol>
+<li>Use the paired fixture and fresh JVM/Comet sessions from chapter 22. Restore the same starting file manifest before each rewrite; running the second engine on the first engine&#39;s compacted output changes the work.</li>
+<li>Show the SQL above and the before/after file-health queries. State the input: 16M rows, 256 files, 128 MiB target, two sort keys.</li>
+<li>In the SQL tab, find the rewrite&#39;s internal scan/exchange/sort/write execution as well as the outer procedure. A <code>CALL</code> can launch multiple internal executions; explaining only the command does not reveal all of them.</li>
+<li>Compare the executed plans with the saved pair. Point to <code>ColumnarToRow</code> / <code>Sort</code> / <code>AppendData</code>, then native scan / <code>CometExchange</code> / <code>CometSort</code> / native write. Check the final adaptive plan where AQE is enabled.</li>
+<li>Open the <code>CometSort</code> node and compare task distributions and spill metrics. Check shuffle read/write and slowest tasks at the stage level. The operator exposes <code>spill_count</code> and <code>spilled_bytes</code>, displayed as <strong>number of spills</strong> and <strong>total spilled bytes</strong>.</li>
+<li>Show the final file count and logical-row checks before the median timing comparison. Explain that the output layout is comparable while the execution path changes.</li>
+</ol>
+<p>The metrics are defined in <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/spark/sql/comet/operators.scala, line 1503; opens the local source file" class="source-link">operators.scala:1503</a>. A missing metric is not proof of zero spill. Operator times aggregated across tasks, task elapsed times and job wall time are different quantities; summing SQL-node times does not reconstruct wall time.</p>
+<p>For a rehearsed run with native-plan logging, set these before executing the query in the configured Comet session:</p>
+<pre><code>SET spark.comet.exec.sort.enabled = true;
+SET spark.comet.explain.native.enabled = true;</code></pre>
+<p>The first switch permits native sort but does not override unsupported expressions/types or missing Comet session setup. The second logs the native tree before execution and again with metrics; inspect executor logs as appropriate, since this is task execution. Sources: <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala, line 222; opens the local source file" class="source-link">CometConf.scala:222</a>, <a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/main/scala/org/apache/comet/CometConf.scala, line 819; opens the local source file" class="source-link">CometConf.scala:819</a>. Logging is diagnostic overhead; keep configuration comparable in timed runs.</p>
+<p>To study sorting separately later, hold input/layout, partitioning, keys, output columns, sink and memory budget constant; consume every result without collecting millions of rows on the driver. Use repeated trials and capture CPU, native spills and shuffle metrics. A <code>COUNT(*)</code> wrapper may eliminate ordering, and adding <code>LIMIT</code> may switch to Top-K, so inspect the executed plan. This is a proposed experiment, not a result recorded here.</p>
+<h2 id="8-source-inspected-tests-and-reading-order">8. Source-inspected tests and reading order</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable comparison table"><table><thead><tr>
+<th>Source</th>
+<th>What to learn</th>
+</tr>
+</thead><tbody><tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/exec/CometExecSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/exec/CometExecSuite.scala, line 2207; opens the local source file" class="source-link">CometExecSuite.scala:2207</a></td>
+<td>Native sort retains child output partitioning</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/exec/CometExecSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/exec/CometExecSuite.scala, line 1943; opens the local source file" class="source-link">CometExecSuite.scala:1943</a></td>
+<td>Type-dependent sort support and fallback cases</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometExpressionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometExpressionSuite.scala, line 147; opens the local source file" class="source-link">CometExpressionSuite.scala:147</a></td>
+<td>Strict scalar floating-point ordering and preservation of returned values</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala" title="/Users/srajak/Documents/repos/oss/apache/datafusion-comet/spark/src/test/scala/org/apache/comet/CometIcebergRewriteActionSuite.scala, line 59; opens the local source file" class="source-link">CometIcebergRewriteActionSuite.scala:59</a></td>
+<td>Sorted rewrite asserts native scan, write, exchange and sort, plus data-order checks</td>
+</tr>
+<tr>
+<td><a href="file:///Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/stream.rs" title="/Users/srajak/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/datafusion-physical-plan-55.1.0/src/sorts/stream.rs, line 410; opens the local source file" class="source-link">DataFusion stream.rs:410</a></td>
+<td>Chunked gathering and output buffer behavior</td>
+</tr>
+</tbody></table></div>
+<p>These are inspected test assertions, not passing test runs from this update. For a first source walkthrough, read the saved Comet plan, <code>CometSortExec.convert</code>, <code>PhysicalPlanner</code>&#39;s sort branch, <code>SortExec::execute</code>, <code>IncrementalSortIterator::next</code>, then <code>StreamingMergeBuilder</code> and <code>SortPreservingMergeStream</code>.</p>
+<pre><code>Speaker cue: exchange assigns ranges -&gt; CometSort orders task rows -&gt; writer creates sorted files
+Performance cue: same maintenance goal -&gt; eligible native pipeline -&gt; measured whole-job gain
+Health cue: fewer files + useful clustering -&gt; possible cheaper reads -&gt; verify with read measurements</code></pre>
+</article><nav class="pager" aria-label="Chapter pagination"><a href="22-table-health-and-compaction-benchmark.html"><small>Previous</small>Table health and benchmark</a><a href="VALIDATION.html"><small>Next</small>Validation</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

@@ -1,0 +1,26 @@
+== Physical Plan ==
+AppendData (5)
++- * Sort (4)
+   +- Exchange (3)
+      +- * ColumnarToRow (2)
+         +- BatchScan local.compaction_bench.clean (1)
+
+
+(1) BatchScan local.compaction_bench.clean
+Output [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]
+local.compaction_bench.clean (branch=null) [filters=, groupedBy=]
+
+(2) ColumnarToRow [codegen id : 1]
+Input [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]
+
+(3) Exchange
+Input [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]
+Arguments: rangepartitioning(customer_id#1433L ASC NULLS FIRST, id#1432L ASC NULLS FIRST, 9), REPARTITION_BY_NUM, [plan_id=612]
+
+(4) Sort [codegen id : 2]
+Input [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]
+Arguments: [customer_id#1433L ASC NULLS FIRST, id#1432L ASC NULLS FIRST], false, 0
+
+(5) AppendData
+Input [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]
+Arguments: org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$3790/0x00000070020dd840@a6b16b8, IcebergWrite(table=local.compaction_bench.clean, format=PARQUET)

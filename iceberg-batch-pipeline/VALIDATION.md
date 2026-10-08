@@ -73,3 +73,17 @@ The source/link, Mermaid parity, arithmetic, SVG XML, gallery and desktop/mobile
 Each speaker-note block has anchor keywords, a short horizontal mental-model chain and a plain-language takeaway. The cue structure is checked automatically; source claims and evidence boundaries still require technical review. These are documentation checks, not engine integration or performance tests.
 
 See the renderer instructions for reproducible commands. Source references are tied to local checkouts and line numbers; rerun the validator after moving the notebook or updating those checkouts.
+
+
+## October 8 compaction and table-health notes
+
+Added chapters 21-22 with Iceberg 1.8.1 algorithm/source anchors, Spark 3.5.3 V2 write protocol, the local Comet/native writer path, table-health SQL and the October 7 benchmark. The notes distinguish the per-group coordinator commit from the outer replacement-snapshot commit. Existing historical measurements are preserved with links to the newer evidence.
+
+Checked the three median ratios against all recorded samples; all 60 validation records preserve logical checks and expected output file counts. Six saved plans match the curated benchmark JSON, and input manifest hashes agree per workload. Source anchors were checked against tagged Iceberg files or the recorded local Comet/Cargo files. Markdown link/anchor validation passes. Desktop/mobile rendering checks cover every generated notebook page; benchmark jobs and engine integration tests were not rerun for this documentation change.
+
+
+## October 8 CometSort notes
+
+Added chapter 23 with SQL, the preserved JVM/Comet plan pair, the Scala/protobuf/JNI/Rust call chain, Arrow index sorting, external merge/spill behavior, compatibility boundaries and a Spark History Server walkthrough. Corrected the chapter 21 source link that pointed to a shuffle radix helper. Source-inspected tests are identified separately from executed checks.
+
+The illustrated row permutation was checked, and the five inspected dependency files match their cached archives. Revalidated Markdown paths/anchors/source lines and generated-page source hashes. All 26 HTML pages were checked at desktop and mobile sizes with 47 existing diagrams, decoded images, local links and responsive navigation. No engine tests, benchmarks, sort-only profiles or post-compaction read measurements were run for this documentation change.

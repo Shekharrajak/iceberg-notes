@@ -1,0 +1,27 @@
+== Physical Plan ==
+IcebergCommit (5)
++- CometIcebergWrite (4)
+   +- CometSort (3)
+      +- CometExchange (2)
+         +- CometIcebergNativeScan (1)
+
+
+(1) CometIcebergNativeScan
+Output [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]
+Arguments: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477], <benchmark-warehouse>/compaction_bench/clean/metadata/v83.metadata.json, local.compaction_bench.clean (branch=null) [filters=, groupedBy=], 256
+
+(2) CometExchange
+Input [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]
+Arguments: rangepartitioning(customer_id#1473L ASC NULLS FIRST, id#1472L ASC NULLS FIRST, 9), REPARTITION_BY_NUM, CometNativeShuffle, [plan_id=711]
+
+(3) CometSort
+Input [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]
+Arguments: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477], [customer_id#1473L ASC NULLS FIRST, id#1472L ASC NULLS FIRST]
+
+(4) CometIcebergWrite
+Input [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]
+Arguments: [iceberg_commit_message#1510], <benchmark-warehouse>/compaction_bench/clean/data, ICEBERG_WRITER_UNPARTITIONED
+
+(5) IcebergCommit
+Input [1]: [iceberg_commit_message#1511]
+Arguments: IcebergBatchWrite(table=local.compaction_bench.clean, format=PARQUET), IcebergWrite(table=local.compaction_bench.clean, format=PARQUET), org.apache.comet.iceberg.IcebergWriteStrategy$$Lambda$3839/0x000000700213d000@12f4c677

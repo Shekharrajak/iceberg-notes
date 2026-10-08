@@ -21,6 +21,9 @@
 <li><a href="18-iceberg-tests-and-benchmark-evidence.html" aria-current="page"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
 <li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
 <li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="18-iceberg-tests-and-benchmark-evidence.md">Markdown source</a></header><article><h1 id="iceberg-integration-tests-benchmark-coverage-and-evidence-gaps">Iceberg integration tests benchmark coverage and evidence gaps</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#evidence-verdict">Evidence verdict</a></li>
@@ -32,6 +35,7 @@
 <li><a href="#focused-validation-commands">Focused validation commands</a></li>
 <li><a href="#experiment-matrix-for-distributed-scale">Experiment matrix for distributed scale</a></li>
 <li><a href="#remaining-gaps">Remaining gaps</a></li></ul></nav></details>
+<p>October 8 addendum: <a href="21-compaction-algorithms-and-execution.html">chapter 21</a> traces compaction algorithms and the staged-write/final-commit boundary; <a href="22-table-health-and-compaction-benchmark.html">chapter 22</a> records the newer 16M-row, five-run JVM/Comet benchmark. Earlier measurements below remain historical.</p>
 <p><a href="index.html">Index</a> | <a href="16-iceberg-metadata-and-snapshots.html">Metadata and snapshots</a> | <a href="17-distributed-iceberg-and-compaction.html">Distributed compaction</a></p>
 <p>There is substantial source coverage for metadata commits, distributed planning, rewrite failures, native write engagement and delete-correct compaction. That does not establish a measured cluster-scale Comet advantage. This chapter separates what tests assert, what benchmark code times, what old local reports show, and what still needs a controlled run.</p>
 <h2 id="evidence-verdict">Evidence verdict</h2>

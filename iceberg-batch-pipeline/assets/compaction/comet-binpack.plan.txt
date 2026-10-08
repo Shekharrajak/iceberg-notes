@@ -1,0 +1,17 @@
+== Physical Plan ==
+IcebergCommit (3)
++- CometIcebergWrite (2)
+   +- CometIcebergNativeScan (1)
+
+
+(1) CometIcebergNativeScan
+Output [6]: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380]
+Arguments: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380], <benchmark-warehouse>/compaction_bench/clean/metadata/v17.metadata.json, local.compaction_bench.clean (branch=null) [filters=, groupedBy=], 256
+
+(2) CometIcebergWrite
+Input [6]: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380]
+Arguments: [iceberg_commit_message#408], <benchmark-warehouse>/compaction_bench/clean/data, ICEBERG_WRITER_UNPARTITIONED
+
+(3) IcebergCommit
+Input [1]: [iceberg_commit_message#409]
+Arguments: IcebergBatchWrite(table=local.compaction_bench.clean, format=PARQUET), IcebergWrite(table=local.compaction_bench.clean, format=PARQUET), org.apache.comet.iceberg.IcebergWriteStrategy$$Lambda$3827/0x0000007002137ce0@6848c32a

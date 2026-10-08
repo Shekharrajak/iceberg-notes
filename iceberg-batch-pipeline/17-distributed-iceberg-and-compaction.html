@@ -21,6 +21,9 @@
 <li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
 <li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
 <li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="17-distributed-iceberg-and-compaction.md">Markdown source</a></header><article><h1 id="distributed-iceberg-planning-execution-and-compaction">Distributed Iceberg planning execution and compaction</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#the-units-of-parallelism">The units of parallelism</a></li>
@@ -32,6 +35,7 @@
 <li><a href="#sequence-numbers-preserve-concurrent-delete-semantics">Sequence numbers preserve concurrent delete semantics</a></li>
 <li><a href="#three-different-failures-and-recoveries">Three different failures and recoveries</a></li>
 <li><a href="#capacity-model-for-a-large-rewrite">Capacity model for a large rewrite</a></li></ul></nav></details>
+<p>October 8 addendum: <a href="21-compaction-algorithms-and-execution.html">chapter 21</a> traces compaction algorithms and the staged-write/final-commit boundary; <a href="22-table-health-and-compaction-benchmark.html">chapter 22</a> records the newer 16M-row, five-run JVM/Comet benchmark. Earlier measurements below remain historical.</p>
 <p><a href="index.html">Index</a> | <a href="16-iceberg-metadata-and-snapshots.html">Metadata and snapshots</a> | <a href="18-iceberg-tests-and-benchmark-evidence.html">Tests and benchmarks</a></p>
 <p>Scaling an Iceberg job means scaling several different kinds of work: metadata planning, file reads, compute/shuffle, file production and publication. Spark can distribute both manifest processing and table-row processing. Comet accelerates eligible executor data work inside that system; it does not provide a second cluster scheduler or a replacement catalog transaction protocol.</p>
 <p>This chapter follows the checked Iceberg Spark 3.5 implementation and the Comet revision in the <a href="09-source-ledger.html">source ledger</a>. Other Spark modules, packaged Iceberg versions and catalog implementations must be checked separately.</p>

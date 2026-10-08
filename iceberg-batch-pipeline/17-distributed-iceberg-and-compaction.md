@@ -1,5 +1,7 @@
 # Distributed Iceberg planning execution and compaction
 
+October 8 addendum: [chapter 21](21-compaction-algorithms-and-execution.md) traces compaction algorithms and the staged-write/final-commit boundary; [chapter 22](22-table-health-and-compaction-benchmark.md) records the newer 16M-row, five-run JVM/Comet benchmark. Earlier measurements below remain historical.
+
 [Index](README.md) | [Metadata and snapshots](16-iceberg-metadata-and-snapshots.md) | [Tests and benchmarks](18-iceberg-tests-and-benchmark-evidence.md)
 
 Scaling an Iceberg job means scaling several different kinds of work: metadata planning, file reads, compute/shuffle, file production and publication. Spark can distribute both manifest processing and table-row processing. Comet accelerates eligible executor data work inside that system; it does not provide a second cluster scheduler or a replacement catalog transaction protocol.

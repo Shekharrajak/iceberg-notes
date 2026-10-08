@@ -224,3 +224,21 @@ Existing local XML reports were inspected separately from test source. They have
 7. Regenerate diagrams after editing Mermaid and inspect the changed outputs.
 
 Historical TPC-H timings are separately qualified in chapter 12. No new SIMD, hardware or rewrite speedup, or live GitHub issue/PR state, is asserted by this addendum.
+
+
+## October 8 compaction and table-health addendum
+
+Chapters 21-22 pin algorithm references to Iceberg `apache-iceberg-1.8.1` (`aef7c249e077ee8cd64489fe0aa6fd52227647bd`) and the Spark V2 write protocol to `v3.5.3`, matching runtime versions. The newer local Iceberg checkout is `c24eeea0b11a373c81a8cc9c8517df9a6ea84a6e`; its planner/runner class names differ and are not substituted for the benchmark's call graph. The local Spark reference HEAD is `f9358a5587a2d512c5cf08ba4b10d60007c93f6e`, separate from the 3.5.3 runtime.
+
+Comet inspection uses local HEAD `184accac5b9cee6b761a6673c73c263adedef45e` with existing scan/benchmark edits. Its Cargo-pinned iceberg-rust source is `bb1e4a4861f02377489eff818b75138f414c4cb0`, inspected in the Cargo checkout. The separate iceberg-rust repository at `60513fdcd152d71c388b1c60b8d02c91dad85693` is not treated as the linked dependency. Binary hashes, not these checkout labels, identify the measured JARs.
+
+The new [curated benchmark evidence](assets/compaction/compaction-16m.json) preserves all 30 measured timings, 30 warm-ups with correctness records, input file-manifest hashes, six median-trial physical plans, and JAR SHA-256 hashes. See [chapter 21](21-compaction-algorithms-and-execution.md) for source/test links and [chapter 22](22-table-health-and-compaction-benchmark.md) for method and limits. No new engine tests or benchmark jobs were run for this documentation update.
+
+
+## October 8 CometSort addendum
+
+[Chapter 23](23-comet-sort-sql-to-rust.md) follows the recorded Comet checkout through Scala serialization, task JNI, the native planner and the resolved `datafusion-physical-plan 55.1.0` / `arrow-ord 59.3.0` dependency sources. DataFusion `sort.rs`, `stream.rs`, `streaming_merge.rs` and `merge.rs`, plus Arrow `sort.rs`, were compared byte for byte with their local cached `.crate` archives; all matched. This checks local source consistency, not the exact source of the October 7 binary.
+
+Source fingerprints: DataFusion `sorts/sort.rs` SHA-256 `e731d6fa1e5d68a36154ba0fd497042af19d010f922c6277c3c5492be70a7cfc`; Arrow `sort.rs` SHA-256 `b60edee04fa10dff2c9cb85f334cf88fb6d6b4c61d4f877acae4e1628299a720`. Full source and inspected-test links appear alongside the explanations. Spark baseline sorting refers to the official `v3.5.3` source.
+
+Chapter 21's sorting reference now points to the native planner and DataFusion operator. Comet's `native/core/src/execution/sort.rs` is a shuffle partition-ID radix helper, not the SQL sorter. The new chapter distinguishes the active chunked sort path from the simpler `sort_batch` helper, task-local ordering from range distribution, and full-sort from Top-K. The saved 2.31x whole-compaction result is not attributed to sorting alone.

@@ -1,0 +1,1846 @@
+{
+  "run": "2026-10-07 / 16 million synthetic events",
+  "hardware": {
+    "memory_bytes": 51539607552,
+    "logical_cpus": 14,
+    "model": "Mac16,7"
+  },
+  "jar_sha256": {
+    "comet-spark-spark3.5_2.12-1.1.0-SNAPSHOT.jar": "af91baf877b73b59f5437d3a40be36fac50efd778375744d8daa2c227c8dfca2",
+    "iceberg-spark-runtime-3.5_2.12-1.8.1.jar": "a42f6e3f89943ddc67d35738f822396970d0c83d5688c7614099a810aeabf9e0"
+  },
+  "dataset": {
+    "physical_rows": 16000000,
+    "data_files": 256,
+    "data_bytes": 1267756086,
+    "average_file_mib": 4.722759447991848,
+    "target_file_bytes": 134217728,
+    "delete_fraction": 0.05,
+    "delete_visible_rows": 15200000,
+    "position_delete_files": 256
+  },
+  "cases": {
+    "binpack": {
+      "case": "binpack",
+      "engines": {
+        "jvm": {
+          "median_s": 3.6514065000228584,
+          "min_s": 3.574198082962539,
+          "max_s": 4.0793837499804795,
+          "q1_s": 3.615267916000448,
+          "q3_s": 3.8765836249804124,
+          "samples_s": [
+            4.0793837499804795,
+            3.8765836249804124,
+            3.615267916000448,
+            3.6514065000228584,
+            3.574198082962539
+          ],
+          "output_files": [
+            10
+          ],
+          "output_bytes_median": 1266942146
+        },
+        "comet": {
+          "median_s": 1.4447796660242602,
+          "min_s": 1.3377600830281153,
+          "max_s": 1.6587247080169618,
+          "q1_s": 1.443287333007902,
+          "q3_s": 1.4480585829587653,
+          "samples_s": [
+            1.4447796660242602,
+            1.6587247080169618,
+            1.443287333007902,
+            1.3377600830281153,
+            1.4480585829587653
+          ],
+          "output_files": [
+            10
+          ],
+          "output_bytes_median": 1253676888
+        }
+      },
+      "jvm_over_comet": 2.5273102784390553,
+      "correctness": "matched",
+      "same_input_files": true,
+      "title": "Bin-pack",
+      "shape": "Scan + native/JVM file write; no exchange or sort.",
+      "sql": "-- Query shape: Scan + native/JVM file write; no exchange or sort.\n-- Purpose: Consolidate small files without changing the sort order.\n-- Timed end to end, including the Iceberg snapshot commit.\n\nCALL local.system.rewrite_data_files(\n  table => 'compaction_bench.clean',\n  strategy => 'binpack',\n  options => map('rewrite-all','true',\n    'target-file-size-bytes','134217728',\n    'max-concurrent-file-group-rewrites','1',\n    'partial-progress.enabled','false'));",
+      "plans": {
+        "jvm": {
+          "text": "== Physical Plan ==\nAppendData (3)\n+- * ColumnarToRow (2)\n   +- BatchScan local.compaction_bench.clean (1)\n\n\n(1) BatchScan local.compaction_bench.clean\nOutput [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]\nlocal.compaction_bench.clean (branch=null) [filters=, groupedBy=]\n\n(2) ColumnarToRow [codegen id : 1]\nInput [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]\n\n(3) AppendData\nInput [6]: [id#367L, customer_id#368L, event_day#369, amount#370, status#371, payload#372]\nArguments: org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$3731/0x000000f0020d5840@5c6c4385, IcebergWrite(table=local.compaction_bench.clean, format=PARQUET)\n\n",
+          "round": 4,
+          "app_id": "local-1791383042469",
+          "sql_id": "12",
+          "history_url": "http://localhost:18081/history/local-1791383042469/SQL/execution/?id=12",
+          "file": "jvm-binpack-r4-measured-sql-12.plan.txt"
+        },
+        "comet": {
+          "text": "== Physical Plan ==\nIcebergCommit (3)\n+- CometIcebergWrite (2)\n   +- CometIcebergNativeScan (1)\n\n\n(1) CometIcebergNativeScan\nOutput [6]: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380]\nArguments: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380], <benchmark-warehouse>/compaction_bench/clean/metadata/v17.metadata.json, local.compaction_bench.clean (branch=null) [filters=, groupedBy=], 256\n\n(2) CometIcebergWrite\nInput [6]: [id#375L, customer_id#376L, event_day#377, amount#378, status#379, payload#380]\nArguments: [iceberg_commit_message#408], <benchmark-warehouse>/compaction_bench/clean/data, ICEBERG_WRITER_UNPARTITIONED\n\n(3) IcebergCommit\nInput [1]: [iceberg_commit_message#409]\nArguments: IcebergBatchWrite(table=local.compaction_bench.clean, format=PARQUET), IcebergWrite(table=local.compaction_bench.clean, format=PARQUET), org.apache.comet.iceberg.IcebergWriteStrategy$$Lambda$3827/0x0000007002137ce0@6848c32a\n\n",
+          "round": 1,
+          "app_id": "local-1791382726393",
+          "sql_id": "12",
+          "history_url": "http://localhost:18081/history/local-1791382726393/SQL/execution/?id=12",
+          "file": "comet-binpack-r1-measured-sql-12.plan.txt"
+        }
+      }
+    },
+    "binpack_deletes": {
+      "case": "binpack_deletes",
+      "engines": {
+        "jvm": {
+          "median_s": 4.294982167019043,
+          "min_s": 3.9819451249786653,
+          "max_s": 4.6004750420106575,
+          "q1_s": 4.211030874983408,
+          "q3_s": 4.438421499973629,
+          "samples_s": [
+            4.438421499973629,
+            4.294982167019043,
+            3.9819451249786653,
+            4.211030874983408,
+            4.6004750420106575
+          ],
+          "output_files": [
+            10
+          ],
+          "output_bytes_median": 1204825472
+        },
+        "comet": {
+          "median_s": 1.5090730409719981,
+          "min_s": 1.2725871249567717,
+          "max_s": 1.9296256669913419,
+          "q1_s": 1.352628624998033,
+          "q3_s": 1.809482124983333,
+          "samples_s": [
+            1.9296256669913419,
+            1.809482124983333,
+            1.352628624998033,
+            1.5090730409719981,
+            1.2725871249567717
+          ],
+          "output_files": [
+            10
+          ],
+          "output_bytes_median": 1189711062
+        }
+      },
+      "jvm_over_comet": 2.84610621912153,
+      "correctness": "matched",
+      "same_input_files": true,
+      "title": "Bin-pack + deletes",
+      "shape": "Scan + position-delete application + file write; no exchange or sort.",
+      "sql": "-- Query shape: Scan + position-delete application + file write; no exchange or sort.\n-- Purpose: Materialize the surviving rows while consolidating small files.\n-- Timed end to end, including the Iceberg snapshot commit.\n\nCALL local.system.rewrite_data_files(\n  table => 'compaction_bench.deletes',\n  strategy => 'binpack',\n  options => map('rewrite-all','true',\n    'target-file-size-bytes','134217728',\n    'max-concurrent-file-group-rewrites','1',\n    'partial-progress.enabled','false'));",
+      "plans": {
+        "jvm": {
+          "text": "== Physical Plan ==\nAppendData (3)\n+- * ColumnarToRow (2)\n   +- BatchScan local.compaction_bench.deletes (1)\n\n\n(1) BatchScan local.compaction_bench.deletes\nOutput [6]: [id#897L, customer_id#898L, event_day#899, amount#900, status#901, payload#902]\nlocal.compaction_bench.deletes (branch=null) [filters=, groupedBy=]\n\n(2) ColumnarToRow [codegen id : 1]\nInput [6]: [id#897L, customer_id#898L, event_day#899, amount#900, status#901, payload#902]\n\n(3) AppendData\nInput [6]: [id#897L, customer_id#898L, event_day#899, amount#900, status#901, payload#902]\nArguments: org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$3731/0x000000a8020dd998@786e4e48, IcebergWrite(table=local.compaction_bench.deletes, format=PARQUET)\n\n",
+          "round": 2,
+          "app_id": "local-1791382834892",
+          "sql_id": "30",
+          "history_url": "http://localhost:18081/history/local-1791382834892/SQL/execution/?id=30",
+          "file": "jvm-binpack_deletes-r2-measured-sql-30.plan.txt"
+        },
+        "comet": {
+          "text": "== Physical Plan ==\nIcebergCommit (3)\n+- CometIcebergWrite (2)\n   +- CometIcebergNativeScan (1)\n\n\n(1) CometIcebergNativeScan\nOutput [6]: [id#921L, customer_id#922L, event_day#923, amount#924, status#925, payload#926]\nArguments: [id#921L, customer_id#922L, event_day#923, amount#924, status#925, payload#926], <benchmark-warehouse>/compaction_bench/deletes/metadata/v46.metadata.json, local.compaction_bench.deletes (branch=null) [filters=, groupedBy=], 256\n\n(2) CometIcebergWrite\nInput [6]: [id#921L, customer_id#922L, event_day#923, amount#924, status#925, payload#926]\nArguments: [iceberg_commit_message#954], <benchmark-warehouse>/compaction_bench/deletes/data, ICEBERG_WRITER_UNPARTITIONED\n\n(3) IcebergCommit\nInput [1]: [iceberg_commit_message#955]\nArguments: IcebergBatchWrite(table=local.compaction_bench.deletes, format=PARQUET), IcebergWrite(table=local.compaction_bench.deletes, format=PARQUET), org.apache.comet.iceberg.IcebergWriteStrategy$$Lambda$3839/0x000000700213d000@56c5ace9\n\n",
+          "round": 4,
+          "app_id": "local-1791382996923",
+          "sql_id": "30",
+          "history_url": "http://localhost:18081/history/local-1791382996923/SQL/execution/?id=30",
+          "file": "comet-binpack_deletes-r4-measured-sql-30.plan.txt"
+        }
+      }
+    },
+    "sort": {
+      "case": "sort",
+      "engines": {
+        "jvm": {
+          "median_s": 9.598078791983426,
+          "min_s": 7.816746833967045,
+          "max_s": 10.098623999976553,
+          "q1_s": 8.772038249997422,
+          "q3_s": 9.701464165991638,
+          "samples_s": [
+            10.098623999976553,
+            8.772038249997422,
+            9.701464165991638,
+            7.816746833967045,
+            9.598078791983426
+          ],
+          "output_files": [
+            9
+          ],
+          "output_bytes_median": 1242947009
+        },
+        "comet": {
+          "median_s": 4.156481082958635,
+          "min_s": 3.338400874985382,
+          "max_s": 5.362666749977507,
+          "q1_s": 3.6200945419841446,
+          "q3_s": 4.8174492079997435,
+          "samples_s": [
+            5.362666749977507,
+            4.8174492079997435,
+            3.6200945419841446,
+            4.156481082958635,
+            3.338400874985382
+          ],
+          "output_files": [
+            9
+          ],
+          "output_bytes_median": 1218120757
+        }
+      },
+      "jvm_over_comet": 2.3091838024561375,
+      "correctness": "matched",
+      "same_input_files": true,
+      "title": "Sort compaction",
+      "shape": "Scan + range exchange + sort + file write.",
+      "sql": "-- Query shape: Scan + range exchange + sort + file write.\n-- Purpose: Sort by customer_id, then id; the captured exchange uses 9 partitions.\n-- Timed end to end, including the Iceberg snapshot commit.\n\nCALL local.system.rewrite_data_files(\n  table => 'compaction_bench.clean',\n  strategy => 'sort', sort_order => 'customer_id ASC NULLS FIRST, id ASC NULLS FIRST',\n  options => map('rewrite-all','true',\n    'target-file-size-bytes','134217728',\n    'max-concurrent-file-group-rewrites','1',\n    'partial-progress.enabled','false'));",
+      "plans": {
+        "jvm": {
+          "text": "== Physical Plan ==\nAppendData (5)\n+- * Sort (4)\n   +- Exchange (3)\n      +- * ColumnarToRow (2)\n         +- BatchScan local.compaction_bench.clean (1)\n\n\n(1) BatchScan local.compaction_bench.clean\nOutput [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]\nlocal.compaction_bench.clean (branch=null) [filters=, groupedBy=]\n\n(2) ColumnarToRow [codegen id : 1]\nInput [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]\n\n(3) Exchange\nInput [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]\nArguments: rangepartitioning(customer_id#1433L ASC NULLS FIRST, id#1432L ASC NULLS FIRST, 9), REPARTITION_BY_NUM, [plan_id=612]\n\n(4) Sort [codegen id : 2]\nInput [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]\nArguments: [customer_id#1433L ASC NULLS FIRST, id#1432L ASC NULLS FIRST], false, 0\n\n(5) AppendData\nInput [6]: [id#1432L, customer_id#1433L, event_day#1434, amount#1435, status#1436, payload#1437]\nArguments: org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$3790/0x00000070020dd840@a6b16b8, IcebergWrite(table=local.compaction_bench.clean, format=PARQUET)\n\n",
+          "round": 5,
+          "app_id": "local-1791383099643",
+          "sql_id": "48",
+          "history_url": "http://localhost:18081/history/local-1791383099643/SQL/execution/?id=48",
+          "file": "jvm-sort-r5-measured-sql-48.plan.txt"
+        },
+        "comet": {
+          "text": "== Physical Plan ==\nIcebergCommit (5)\n+- CometIcebergWrite (4)\n   +- CometSort (3)\n      +- CometExchange (2)\n         +- CometIcebergNativeScan (1)\n\n\n(1) CometIcebergNativeScan\nOutput [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]\nArguments: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477], <benchmark-warehouse>/compaction_bench/clean/metadata/v83.metadata.json, local.compaction_bench.clean (branch=null) [filters=, groupedBy=], 256\n\n(2) CometExchange\nInput [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]\nArguments: rangepartitioning(customer_id#1473L ASC NULLS FIRST, id#1472L ASC NULLS FIRST, 9), REPARTITION_BY_NUM, CometNativeShuffle, [plan_id=711]\n\n(3) CometSort\nInput [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]\nArguments: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477], [customer_id#1473L ASC NULLS FIRST, id#1472L ASC NULLS FIRST]\n\n(4) CometIcebergWrite\nInput [6]: [id#1472L, customer_id#1473L, event_day#1474, amount#1475, status#1476, payload#1477]\nArguments: [iceberg_commit_message#1510], <benchmark-warehouse>/compaction_bench/clean/data, ICEBERG_WRITER_UNPARTITIONED\n\n(5) IcebergCommit\nInput [1]: [iceberg_commit_message#1511]\nArguments: IcebergBatchWrite(table=local.compaction_bench.clean, format=PARQUET), IcebergWrite(table=local.compaction_bench.clean, format=PARQUET), org.apache.comet.iceberg.IcebergWriteStrategy$$Lambda$3839/0x000000700213d000@12f4c677\n\n",
+          "round": 4,
+          "app_id": "local-1791382996923",
+          "sql_id": "48",
+          "history_url": "http://localhost:18081/history/local-1791382996923/SQL/execution/?id=48",
+          "file": "comet-sort-r4-measured-sql-48.plan.txt"
+        }
+      }
+    }
+  },
+  "views": {
+    "dataset": "DATASET AND FILE LAYOUT\n\nDeterministic synthetic events (not TPC-H / TPC-DS).\n16,000,000 physical rows in 256 Parquet files; unpartitioned Iceberg v2.\n1,267,756,086 data bytes = 1.18 GiB; average input file = 4.72 MiB.\nSnappy compression; target output file size = 128 MiB (approximate).\n\nColumns: id BIGINT, customer_id BIGINT, event_day DATE,\n         amount DECIMAL(12,2), status STRING, payload STRING.\nCustomer IDs: 1 million possible values. Dates: 90 days.\nStatus: five values, with NULL on every eighth row.\nPayload: a 64-character SHA-256 hex string, to avoid a trivial compressible dataset.\n\nDELETE WORKLOAD\nFive separate merge-on-read DELETE batches: pmod(id, 100) = 0, 1, 2, 3, 4.\n800,000 deleted rows (5%); 15,200,000 visible rows before AND after compaction.\n256 position-delete files in the seed snapshot; no equality-delete workload.\nThe rewrite materializes deletes in the new data files. The 256 delete files\nremain referenced in the resulting snapshot; delete-file cleanup is not measured.\n\nWHY 10 FILES FOR BIN-PACK, BUT 9 FOR SORT?\nBoth engines produce the same file counts: 256 -> 10, or 256 -> 9 for sort.\nBin-pack groups whole input files into scan tasks; the final group is smaller.\nSort redistributes rows into 9 range partitions before writing.\n128 MiB is a target, not a hard limit or a guarantee of exactly 10 files.\nThis reduces file count, not the logical data volume by 25 times.\n\nGENERATOR SELECT (same values for clean and delete-seed tables)\nSELECT id,\n  pmod(xxhash64(id), 1000000) AS customer_id,\n  date_add(DATE '2025-01-01', cast(pmod(id,90) AS int)) AS event_day,\n  cast(pmod(id*37,100000)/100.0 AS decimal(12,2)) AS amount,\n  CASE WHEN pmod(id,8)=0 THEN NULL\n    ELSE concat('status_', cast(pmod(id,5) AS string)) END AS status,\n  sha2(cast(id AS string),256) AS payload\nFROM range(0,16000000,1,256);",
+    "machine": "MACHINE AND SOFTWARE\n\nMac16,7 | 14 logical CPUs | 48 GiB RAM | local filesystem\nSpark local[8]: one machine, up to 8 concurrent Spark task threads.\nBoth arms: 4 GiB driver JVM heap + 8 GiB configured off-heap memory.\nSpark 3.5.3 | Iceberg 1.8.1 | Comet 1.1.0-SNAPSHOT | Java 17.0.18 (Amazon)\nLocal development JAR; experimental native Iceberg writer enabled.\nThe JAR hashes identify the binaries. The working checkout had local edits;\nits Git HEAD alone does not establish the exact source of these binaries.\n\nCAPTURED COMET CONFIGURATION\nspark.master=local[8]\nspark.driver.memory=4g\nspark.memory.offHeap.enabled=true\nspark.memory.offHeap.size=8g\nspark.sql.adaptive.enabled=false\nspark.sql.shuffle.partitions=8\nspark.plugins=org.apache.spark.CometPlugin\nspark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,org.apache.comet.CometSparkSessionExtensions\nspark.shuffle.manager=org.apache.spark.sql.comet.execution.shuffle.CometShuffleManager\nspark.comet.enabled=true\nspark.comet.exec.enabled=true\nspark.comet.scan.icebergNative.enabled=true\nspark.comet.scan.icebergNative.dataFileConcurrencyLimit=4\nspark.comet.write.iceberg.splitOperator.enabled=true\nspark.comet.iceberg.write.enabled=true\nspark.comet.explain.planOnly.enabled=false\n\nThe JVM arm has Comet disabled and uses Iceberg's JVM reader/writer.\nThe SQL default is 8 shuffle partitions; the sort action requests 9 explicitly.\nFlag names above belong to the measured local build.\n\nJAR SHA-256\ncomet-spark-spark3.5_2.12-1.1.0-SNAPSHOT.jar\naf91baf877b73b59f5437d3a40be36fac50efd778375744d8daa2c227c8dfca2\niceberg-spark-runtime-3.5_2.12-1.8.1.jar\na42f6e3f89943ddc67d35738f822396970d0c83d5688c7614099a810aeabf9e0",
+    "method": "MEASUREMENT METHOD\n\n5 paired rounds; separate JVM and Comet applications (10 applications total).\nEngine order alternates by round. Each application runs bin-pack, deletes, sort.\nOne full warm-up rewrite immediately precedes each measured case in each app.\n30 measured rewrites + 30 warm-ups. Results show medians, with JVM / Comet ratios.\nThe original seed snapshot is restored before every warm-up and measured trial.\nThe input file-manifest hash is checked each time; both arms read identical files.\n\nTimer: time.perf_counter() around spark.sql(CALL ...).collect().\nIncludes procedure planning, data rewrite, and Iceberg snapshot commit.\nExcludes Spark startup, data preparation, validation, plan export and seed restore.\nA JVM checksum scan precedes every timed call: the filesystem cache is warm.\nNo Spark persisted data. One concurrent file group; partial progress disabled.\n\nVALIDATION AND PLANS\nAll 60 rewrites matched row count, sum(amount), and two aggregate xxhash64 sums.\nThe two hashes cover all six columns and are summed as DECIMAL(38,0).\nClean cases preserve 16M visible rows; the delete case preserves 15.2M visible rows.\nComet output Parquet footers identify \"Apache Iceberg 1.8.1 (Comet)\".\nSaved internal rewrite plans show native scan + native write in every Comet run;\nsort also shows CometExchange (CometNativeShuffle) + CometSort.\nThe plan tabs show each engine's median trial, not necessarily the same round.\nRead operator trees from the leaf scan upward. The outer CALL alone hides this work.\nLocal warehouse paths are shortened in the saved plans; operators are unchanged.\n\nSCOPE\nOne machine, local storage, warm cache, synthetic data; no production guarantee.\nNo post-compaction read-latency, cold-cache, object-store or monetary-cost result.\nNo Z-order, equality-delete, delete-file rewrite or metadata-maintenance benchmark.\nNative task CPU is not fully represented by Spark's task-thread CPU counter.\n\nMEASURED SECONDS (rounds 1 to 5)\n\nBin-pack\n  JVM   4.079, 3.877, 3.615, 3.651, 3.574 | median 3.651\n  COMET 1.445, 1.659, 1.443, 1.338, 1.448 | median 1.445\n\nBin-pack + deletes\n  JVM   4.438, 4.295, 3.982, 4.211, 4.600 | median 4.295\n  COMET 1.930, 1.809, 1.353, 1.509, 1.273 | median 1.509\n\nSort compaction\n  JVM   10.099, 8.772, 9.701, 7.817, 9.598 | median 9.598\n  COMET 5.363, 4.817, 3.620, 4.156, 3.338 | median 4.156\n"
+  },
+  "validation": [
+    {
+      "label": "jvm-binpack-r1-warmup",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 6.011071707995143,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r1-measured",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 4.0793837499804795,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack_deletes-r1-warmup",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 4.7238400420174,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-binpack_deletes-r1-measured",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 4.438421499973629,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-sort-r1-warmup",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 10.97318420902593,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-sort-r1-measured",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 10.098623999976553,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r2-warmup",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 4.2611303749727085,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r2-measured",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 3.8765836249804124,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack_deletes-r2-warmup",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 4.386915083043277,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-binpack_deletes-r2-measured",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 4.294982167019043,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-sort-r2-warmup",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 9.53207337501226,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-sort-r2-measured",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 8.772038249997422,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r3-warmup",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 3.74348620895762,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r3-measured",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 3.615267916000448,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack_deletes-r3-warmup",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 4.414471916970797,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-binpack_deletes-r3-measured",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 3.9819451249786653,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-sort-r3-warmup",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 9.502092167036608,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-sort-r3-measured",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 9.701464165991638,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r4-warmup",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 4.037902541982476,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r4-measured",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 3.6514065000228584,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack_deletes-r4-warmup",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 4.659829208045267,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-binpack_deletes-r4-measured",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 4.211030874983408,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-sort-r4-warmup",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 10.200430999975652,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-sort-r4-measured",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 7.816746833967045,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r5-warmup",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 4.004994707996957,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack-r5-measured",
+      "engine": "jvm",
+      "case": "binpack",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 3.574198082962539,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-binpack_deletes-r5-warmup",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 4.831905084021855,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-binpack_deletes-r5-measured",
+      "engine": "jvm",
+      "case": "binpack_deletes",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 4.6004750420106575,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "jvm-sort-r5-warmup",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 10.820659500022884,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "jvm-sort-r5-measured",
+      "engine": "jvm",
+      "case": "sort",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 9.598078791983426,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "parquet-mr version 1.15.0 (build 4665401d36e468c988322f78621da7c2d1c22ede)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r1-warmup",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 3.4329972499981523,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r1-measured",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 1.4447796660242602,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack_deletes-r1-warmup",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 2.3701574580045417,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-binpack_deletes-r1-measured",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 1.9296256669913419,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-sort-r1-warmup",
+      "engine": "comet",
+      "case": "sort",
+      "round": 1,
+      "phase": "warmup",
+      "seconds": 5.948598291026428,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-sort-r1-measured",
+      "engine": "comet",
+      "case": "sort",
+      "round": 1,
+      "phase": "measured",
+      "seconds": 5.362666749977507,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r2-warmup",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 4.156281500007026,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r2-measured",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 1.6587247080169618,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack_deletes-r2-warmup",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 1.8559902920387685,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-binpack_deletes-r2-measured",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 1.809482124983333,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-sort-r2-warmup",
+      "engine": "comet",
+      "case": "sort",
+      "round": 2,
+      "phase": "warmup",
+      "seconds": 5.1145831670146435,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-sort-r2-measured",
+      "engine": "comet",
+      "case": "sort",
+      "round": 2,
+      "phase": "measured",
+      "seconds": 4.8174492079997435,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r3-warmup",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 4.1128025419893675,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r3-measured",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 1.443287333007902,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack_deletes-r3-warmup",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 1.4477935840259306,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-binpack_deletes-r3-measured",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 1.352628624998033,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-sort-r3-warmup",
+      "engine": "comet",
+      "case": "sort",
+      "round": 3,
+      "phase": "warmup",
+      "seconds": 4.502077625016682,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-sort-r3-measured",
+      "engine": "comet",
+      "case": "sort",
+      "round": 3,
+      "phase": "measured",
+      "seconds": 3.6200945419841446,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r4-warmup",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 3.3181482499931008,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r4-measured",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 1.3377600830281153,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack_deletes-r4-warmup",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 1.5449544160510413,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-binpack_deletes-r4-measured",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 1.5090730409719981,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-sort-r4-warmup",
+      "engine": "comet",
+      "case": "sort",
+      "round": 4,
+      "phase": "warmup",
+      "seconds": 5.200498333026189,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-sort-r4-measured",
+      "engine": "comet",
+      "case": "sort",
+      "round": 4,
+      "phase": "measured",
+      "seconds": 4.156481082958635,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r5-warmup",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 3.4181784170214087,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack-r5-measured",
+      "engine": "comet",
+      "case": "binpack",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 1.4480585829587653,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-binpack_deletes-r5-warmup",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 1.4189433340216056,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-binpack_deletes-r5-measured",
+      "engine": "comet",
+      "case": "binpack_deletes",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 1.2725871249567717,
+      "before": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "after": {
+        "rows": "15200000",
+        "amount": "7600048000.00",
+        "hash1": "-5994258680635639143535",
+        "hash2": "-43548337870315017877027"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "909326a05e391100196458f0c88caad64197e3688533ca509667897c94f8ef68",
+      "input_data_files": 256,
+      "output_data_files": 10,
+      "remaining_position_delete_files": 256
+    },
+    {
+      "label": "comet-sort-r5-warmup",
+      "engine": "comet",
+      "case": "sort",
+      "round": 5,
+      "phase": "warmup",
+      "seconds": 4.885811665968504,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    },
+    {
+      "label": "comet-sort-r5-measured",
+      "engine": "comet",
+      "case": "sort",
+      "round": 5,
+      "phase": "measured",
+      "seconds": 3.338400874985382,
+      "before": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "after": {
+        "rows": "16000000",
+        "amount": "7999920000.00",
+        "hash1": "-7027745784777630601378",
+        "hash2": "-31905108645927708628469"
+      },
+      "parquet_created_by": [
+        "Apache Iceberg 1.8.1 (Comet)"
+      ],
+      "input_manifest_sha256": "14be9cfac4d4627d715a98564be39abaf85f26c3d5e6ea41c625cee2d07d3264",
+      "input_data_files": 256,
+      "output_data_files": 9,
+      "remaining_position_delete_files": 0
+    }
+  ]
+}

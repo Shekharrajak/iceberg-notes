@@ -21,6 +21,9 @@
 <li><a href="18-iceberg-tests-and-benchmark-evidence.html"><span class="chapter-number">18</span>Tests and benchmark evidence</a></li>
 <li><a href="19-reading-spark-ui.html"><span class="chapter-number">19</span>Reading Spark UI: normal plans versus forced shuffle</a></li>
 <li><a href="20-iceberg-spark-ui-metrics.html"><span class="chapter-number">20</span>Iceberg metrics in Spark UI: planning, execution and commit evidence</a></li>
+<li><a href="21-compaction-algorithms-and-execution.html"><span class="chapter-number">21</span>Compaction algorithms and code</a></li>
+<li><a href="22-table-health-and-compaction-benchmark.html"><span class="chapter-number">22</span>Table health and benchmark</a></li>
+<li><a href="23-comet-sort-sql-to-rust.html"><span class="chapter-number">23</span>CometSort: SQL to Rust</a></li>
 <li><a href="VALIDATION.html"><span class="chapter-number"></span>Validation</a></li>
 <li><a href="scripts/README.html"><span class="chapter-number"></span>Rendering guide</a></li></ol></nav></details><a class="gallery-link" href="diagrams/index.html">Browse all 47 diagrams</a><a class="gallery-link" href="../iceberg-to-druid/index.html">Iceberg to Druid notebook</a></aside><main id="main"><header class="page-tools"><span>Source-backed technical notes</span><a class="source-link" href="09-source-ledger.md">Markdown source</a></header><article><h1 id="source-revisions-evidence-and-validation-limits">Source revisions evidence and validation limits</h1>
 <details class="page-toc"><summary>On this page</summary><nav aria-label="On this page"><ul><li><a href="#checkout-scope">Checkout scope</a></li>
@@ -39,7 +42,9 @@
 <li><a href="#tests-inspected">Tests inspected</a></li>
 <li><a href="#arrow-and-hardware-addendum">Arrow and hardware addendum</a></li>
 <li><a href="#metadata-and-distributed-compaction-addendum">Metadata and distributed compaction addendum</a></li>
-<li><a href="#revalidation-procedure">Revalidation procedure</a></li></ul></nav></details>
+<li><a href="#revalidation-procedure">Revalidation procedure</a></li>
+<li><a href="#october-8-compaction-and-table-health-addendum">October 8 compaction and table-health addendum</a></li>
+<li><a href="#october-8-cometsort-addendum">October 8 CometSort addendum</a></li></ul></nav></details>
 <p><a href="index.html">Index</a></p>
 <h2 id="checkout-scope">Checkout scope</h2>
 <p>Checked on 2026-09-30. These are local source revisions, not a claim that every repository is at current upstream HEAD or linked into the same binary.</p>
@@ -575,4 +580,12 @@
 <li>Regenerate diagrams after editing Mermaid and inspect the changed outputs.</li>
 </ol>
 <p>Historical TPC-H timings are separately qualified in chapter 12. No new SIMD, hardware or rewrite speedup, or live GitHub issue/PR state, is asserted by this addendum.</p>
+<h2 id="october-8-compaction-and-table-health-addendum">October 8 compaction and table-health addendum</h2>
+<p>Chapters 21-22 pin algorithm references to Iceberg <code>apache-iceberg-1.8.1</code> (<code>aef7c249e077ee8cd64489fe0aa6fd52227647bd</code>) and the Spark V2 write protocol to <code>v3.5.3</code>, matching runtime versions. The newer local Iceberg checkout is <code>c24eeea0b11a373c81a8cc9c8517df9a6ea84a6e</code>; its planner/runner class names differ and are not substituted for the benchmark&#39;s call graph. The local Spark reference HEAD is <code>f9358a5587a2d512c5cf08ba4b10d60007c93f6e</code>, separate from the 3.5.3 runtime.</p>
+<p>Comet inspection uses local HEAD <code>184accac5b9cee6b761a6673c73c263adedef45e</code> with existing scan/benchmark edits. Its Cargo-pinned iceberg-rust source is <code>bb1e4a4861f02377489eff818b75138f414c4cb0</code>, inspected in the Cargo checkout. The separate iceberg-rust repository at <code>60513fdcd152d71c388b1c60b8d02c91dad85693</code> is not treated as the linked dependency. Binary hashes, not these checkout labels, identify the measured JARs.</p>
+<p>The new <a href="assets/compaction/compaction-16m.json">curated benchmark evidence</a> preserves all 30 measured timings, 30 warm-ups with correctness records, input file-manifest hashes, six median-trial physical plans, and JAR SHA-256 hashes. See <a href="21-compaction-algorithms-and-execution.html">chapter 21</a> for source/test links and <a href="22-table-health-and-compaction-benchmark.html">chapter 22</a> for method and limits. No new engine tests or benchmark jobs were run for this documentation update.</p>
+<h2 id="october-8-cometsort-addendum">October 8 CometSort addendum</h2>
+<p><a href="23-comet-sort-sql-to-rust.html">Chapter 23</a> follows the recorded Comet checkout through Scala serialization, task JNI, the native planner and the resolved <code>datafusion-physical-plan 55.1.0</code> / <code>arrow-ord 59.3.0</code> dependency sources. DataFusion <code>sort.rs</code>, <code>stream.rs</code>, <code>streaming_merge.rs</code> and <code>merge.rs</code>, plus Arrow <code>sort.rs</code>, were compared byte for byte with their local cached <code>.crate</code> archives; all matched. This checks local source consistency, not the exact source of the October 7 binary.</p>
+<p>Source fingerprints: DataFusion <code>sorts/sort.rs</code> SHA-256 <code>e731d6fa1e5d68a36154ba0fd497042af19d010f922c6277c3c5492be70a7cfc</code>; Arrow <code>sort.rs</code> SHA-256 <code>b60edee04fa10dff2c9cb85f334cf88fb6d6b4c61d4f877acae4e1628299a720</code>. Full source and inspected-test links appear alongside the explanations. Spark baseline sorting refers to the official <code>v3.5.3</code> source.</p>
+<p>Chapter 21&#39;s sorting reference now points to the native planner and DataFusion operator. Comet&#39;s <code>native/core/src/execution/sort.rs</code> is a shuffle partition-ID radix helper, not the SQL sorter. The new chapter distinguishes the active chunked sort path from the simpler <code>sort_batch</code> helper, task-local ordering from range distribution, and full-sort from Top-K. The saved 2.31x whole-compaction result is not attributed to sorting alone.</p>
 </article><nav class="pager" aria-label="Chapter pagination"><a href="08-capabilities-and-debugging.html"><small>Previous</small>Capabilities and gaps</a><a href="10-datafusion-and-connector.html"><small>Next</small>DataFusion and connector</a></nav><footer>Rendered from the local Markdown sources. Diagrams work offline. Use Actual size or Open SVG to inspect wide flows.</footer></main></div></body></html>

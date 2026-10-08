@@ -39,6 +39,9 @@ const shortLabels = new Map([
   ['16-iceberg-metadata-and-snapshots.md', 'Metadata and snapshots'],
   ['17-distributed-iceberg-and-compaction.md', 'Distributed compaction'],
   ['18-iceberg-tests-and-benchmark-evidence.md', 'Tests and benchmark evidence'],
+  ['21-compaction-algorithms-and-execution.md', 'Compaction algorithms and code'],
+  ['22-table-health-and-compaction-benchmark.md', 'Table health and benchmark'],
+  ['23-comet-sort-sql-to-rust.md', 'CometSort: SQL to Rust'],
   ['VALIDATION.md', 'Validation'],
   ['scripts/README.md', 'Rendering guide']
 ]);
